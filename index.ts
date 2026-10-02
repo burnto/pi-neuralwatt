@@ -57,7 +57,7 @@ const MODELS_CACHE_PATH = join(
 );
 const SETTINGS_PATH = join(getAgentDir(), "neuralwatt.json");
 const STATUS_KEY = "neuralwatt-energy";
-const ENERGY_MARK = "\u26A1\uFE0E"; // ⚡︎ forced text presentation.
+const ENERGY_MARK = "\u26A1\uFE0F"; // ⚡️ emoji presentation.
 const FETCH_TIMEOUT_MS = 15_000;
 const RECORD_WAIT_MS = 300;
 const MAX_PENDING_RECORDS = 16;
@@ -497,7 +497,7 @@ export default async function (pi: ExtensionAPI) {
 				const data = entry.data;
 				if (!isEnergyCostEntry(data)) return undefined;
 				const suffix = data.costSource === "energy-rate" ? " est." : "";
-				const text = `${ENERGY_MARK}${formatWh(data.energyKwh)} \u00B7 ${formatUsd(data.costUsd)}${suffix}`;
+				const text = `${ENERGY_MARK} ${formatWh(data.energyKwh)} \u00B7 ${formatUsd(data.costUsd)}${suffix}`;
 				return {
 					render: () => [theme.fg(settings.energyColor, text)],
 					invalidate: () => {},

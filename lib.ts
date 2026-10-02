@@ -582,12 +582,12 @@ export function formatStatusText(
 	totals: Totals,
 	last: EnergyCostEntry | undefined,
 	settings: NeuralwattSettings,
-	mark = "\u26A1\uFE0E",
+	mark = "\u26A1\uFE0F",
 ): string | undefined {
 	if (settings.energyStatus === "off") return undefined;
 	const energyKwh =
 		settings.energyStatus === "last" ? (last?.energyKwh ?? 0) : totals.energyKwh;
-	const parts = [`${mark}${formatWh(energyKwh)}`];
+	const parts = [`${mark} ${formatWh(energyKwh)}`];
 	if (settings.energyStatus === "both" && last) {
 		parts.push(`(+${formatWh(last.energyKwh)})`);
 	}

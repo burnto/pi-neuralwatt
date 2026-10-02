@@ -148,22 +148,22 @@ describe("formatStatusText", () => {
 	};
 
 	it("shows the session total by default", () => {
-		expect(formatStatusText(totals, last, DEFAULT_SETTINGS)).toBe("\u26A1\uFE0E1.00 Wh");
+		expect(formatStatusText(totals, last, DEFAULT_SETTINGS)).toBe("\u26A1\uFE0F 1.00 Wh");
 	});
 
 	it("shows zero before any measurements", () => {
 		expect(formatStatusText(emptyTotals(), undefined, DEFAULT_SETTINGS)).toBe(
-			"\u26A1\uFE0E0 Wh",
+			"\u26A1\uFE0F 0 Wh",
 		);
 	});
 
 	it("supports last-response and combined modes", () => {
 		expect(
 			formatStatusText(totals, last, { ...DEFAULT_SETTINGS, energyStatus: "last" }),
-		).toBe("\u26A1\uFE0E0.500 Wh");
+		).toBe("\u26A1\uFE0F 0.500 Wh");
 		expect(
 			formatStatusText(totals, last, { ...DEFAULT_SETTINGS, energyStatus: "both" }),
-		).toBe("\u26A1\uFE0E1.00 Wh (+0.500 Wh)");
+		).toBe("\u26A1\uFE0F 1.00 Wh (+0.500 Wh)");
 	});
 
 	it("hides when disabled", () => {
@@ -175,6 +175,6 @@ describe("formatStatusText", () => {
 	it("appends configured equivalents to the session total", () => {
 		expect(
 			formatStatusText(totals, last, { ...DEFAULT_SETTINGS, equivalents: ["doomscroll"] }),
-		).toBe("\u26A1\uFE0E1.00 Wh \u00B7 2.4 min doomscrolling");
+		).toBe("\u26A1\uFE0F 1.00 Wh \u00B7 \u{1F4F1} 2m24");
 	});
 });
