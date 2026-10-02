@@ -32,7 +32,6 @@ import {
 	isEnergyCostEntry,
 	isFinitePositiveNumber,
 	isNeuralwattChatCompletionsUrl,
-	isThemeColorName,
 	lastEntryFromEntries,
 	makeEntry,
 	mapModelsResponse,
@@ -663,8 +662,16 @@ export default async function (pi: ExtensionAPI) {
 						settings.energyStatus = picked;
 					}
 				} else if (choice.startsWith("Energy color")) {
-					const picked = await ctx.ui.select("Energy color", [...THEME_COLORS]);
-					if (isThemeColorName(picked)) settings.energyColor = picked;
+					const samples = THEME_COLORS.map((color) => ({
+						color,
+						label: `${color.padEnd(8)} ${ctx.ui.theme.fg(color, `${ENERGY_MARK} 1.42 Wh`)}`,
+					}));
+					const picked = await ctx.ui.select(
+						"Energy color",
+						samples.map((sample) => sample.label),
+					);
+					const match = samples.find((sample) => sample.label === picked);
+					if (match) settings.energyColor = match.color;
 				} else if (choice.startsWith("Equivalents")) {
 					await editEquivalents(ctx);
 				} else if (choice.startsWith("Pi footer cost")) {
