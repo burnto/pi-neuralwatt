@@ -407,22 +407,73 @@ export type EquivalentId = keyof typeof EQUIVALENTS;
  * phone-plus-network figure; a human brain runs on about 20 W.
  */
 export const EQUIVALENTS = {
-	doomscroll: { label: "doomscrolling", whPerMinute: 0.416 },
-	brain: { label: "human brain", whPerMinute: 0.333 },
-	led: { label: "10 W LED bulb", whPerMinute: 1 / 6 },
+	doomscroll: {
+		label: "doomscrolling",
+		icon: "\u{1F4F1}",
+		description: "doomscrolling on an iPhone 15",
+		whPerMinute: 0.416,
+	},
+	brain: {
+		label: "human brain",
+		icon: "\u{1F9E0}",
+		description: "powering a human brain",
+		whPerMinute: 0.333,
+	},
+	led: {
+		label: "10 W LED bulb",
+		icon: "\u{1F4A1}",
+		description: "running a 10 W LED bulb",
+		whPerMinute: 1 / 6,
+	},
 } as const;
 
 export function isEquivalentId(value: unknown): value is EquivalentId {
 	return typeof value === "string" && value in EQUIVALENTS;
 }
 
-export function formatDuration(minutes: number): string {
-	if (!Number.isFinite(minutes) || minutes <= 0) return "0 s";
-	if (minutes >= 60) return `${(minutes / 60).toFixed(1)} h`;
-	if (minutes >= 1) return `${minutes.toFixed(1)} min`;
-	const seconds = minutes * 60;
-	if (seconds >= 1) return `${seconds.toFixed(1)} s`;
-	return `${(seconds * 1000).toFixed(0)} ms`;
+/*
+ * Duration split into primary and secondary units. A zero secondary unit is
+ * dropped so 2h00 renders as 2h. Compact joins with no separator (2h10);
+ * spaced joins with a space and repeats the secondary unit (2h 10m).
+ */
+function splitDuration(minutes: number): {
+	value: number;
+	unit: "h" | "m" | "s";
+	remainder?: { value: number; unit: "m" | "s" };
+} {
+	if (!Number.isFinite(minutes) || minutes <= 0) return { value: 0, unit: "s" };
+	const totalSeconds = Math.round(minutes * 60);
+	if (totalSeconds < 60) return { value: totalSeconds, unit: "s" };
+	const totalMinutes = Math.floor(totalSeconds / 60);
+	const seconds = totalSeconds % 60;
+	if (totalMinutes < 60) {
+		return seconds === 0
+			? { value: totalMinutes, unit: "m" }
+			: {
+					value: totalMinutes,
+					unit: "m",
+					remainder: { value: seconds, unit: "s" },
+				};
+	}
+	const hours = Math.floor(totalMinutes / 60);
+	const mins = totalMinutes % 60;
+	return mins === 0
+		? { value: hours, unit: "h" }
+		: { value: hours, unit: "h", remainder: { value: mins, unit: "m" } };
+}
+
+export function formatCompactDuration(minutes: number): string {
+	const { value, unit, remainder } = splitDuration(minutes);
+	return remainder
+		? `${value}${unit}${String(remainder.value).padStart(2, "0")}`
+		: `${value}${unit}`;
+}
+
+export function formatSpacedDuration(minutes: number): string {
+	const { value, unit, remainder } = splitDuration(minutes);
+	return remainder
+		? `${value}${unit} ${String(remainder.value).padStart(2, "0")}${remainder.unit}`
+		: `${value}${unit}`;
 }
 
 export function formatEquivalent(
@@ -434,7 +485,21 @@ export function formatEquivalent(
 		return undefined;
 	}
 	const minutes = (kwh * 1000) / rate;
-	return `${formatDuration(minutes)} ${EQUIVALENTS[id].label}`;
+	return `${EQUIVALENTS[id].icon} ${formatCompactDuration(minutes)}`;
+}
+
+/* Verbose form for /neuralwatt:cost, where the activity is spelled out. */
+export function formatEquivalentDetail(
+	kwh: number,
+	id: EquivalentId,
+): string | undefined {
+	const rate = EQUIVALENTS[id]?.whPerMinute;
+	if (!isFinitePositiveNumber(rate) || !isFiniteNonNegativeNumber(kwh)) {
+		return undefined;
+	}
+	const minutes = (kwh * 1000) / rate;
+	const { icon, description } = EQUIVALENTS[id];
+	return `${icon} ${formatSpacedDuration(minutes)} ${description}`;
 }
 
 export type EnergyStatusMode = "session" | "last" | "both" | "off";

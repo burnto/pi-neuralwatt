@@ -4,9 +4,11 @@ import {
 	type EnergyCostEntry,
 	type Totals,
 	emptyTotals,
-	formatDuration,
+	formatCompactDuration,
 	formatEquivalent,
+	formatEquivalentDetail,
 	formatJoules,
+	formatSpacedDuration,
 	formatStatusText,
 	formatUsd,
 	formatWh,
@@ -71,31 +73,58 @@ describe("formatJoules", () => {
 	});
 });
 
-describe("formatDuration", () => {
-	it("formats minutes and hours", () => {
-		expect(formatDuration(2.9)).toBe("2.9 min");
-		expect(formatDuration(90)).toBe("1.5 h");
+describe("formatCompactDuration", () => {
+	it("formats sub-minute durations as seconds", () => {
+		expect(formatCompactDuration(35 / 60)).toBe("35s");
+		expect(formatCompactDuration(0.5)).toBe("30s");
 	});
-	it("formats sub-minute durations in seconds and milliseconds", () => {
-		expect(formatDuration(0.5)).toBe("30.0 s");
-		expect(formatDuration(1 / 600)).toBe("100 ms");
+	it("formats minutes with a two-digit seconds suffix", () => {
+		expect(formatCompactDuration(1.5)).toBe("1m30");
+		expect(formatCompactDuration(1)).toBe("1m");
+	});
+	it("formats hours with a two-digit minutes suffix", () => {
+		expect(formatCompactDuration(130)).toBe("2h10");
+		expect(formatCompactDuration(120)).toBe("2h");
 	});
 	it("handles zero and invalid input", () => {
-		expect(formatDuration(0)).toBe("0 s");
-		expect(formatDuration(-1)).toBe("0 s");
-		expect(formatDuration(NaN)).toBe("0 s");
+		expect(formatCompactDuration(0)).toBe("0s");
+		expect(formatCompactDuration(-1)).toBe("0s");
+		expect(formatCompactDuration(NaN)).toBe("0s");
+	});
+});
+
+describe("formatSpacedDuration", () => {
+	it("joins units with a space", () => {
+		expect(formatSpacedDuration(1.5)).toBe("1m 30s");
+		expect(formatSpacedDuration(130)).toBe("2h 10m");
+		expect(formatSpacedDuration(35 / 60)).toBe("35s");
+		expect(formatSpacedDuration(120)).toBe("2h");
 	});
 });
 
 describe("formatEquivalent", () => {
-	it("converts kWh into minutes of an activity", () => {
+	it("converts kWh into an icon and compact duration", () => {
 		// 416 mWh/min -> 1 Wh is ~2.4 min of doomscrolling
-		expect(formatEquivalent(0.001, "doomscroll")).toBe("2.4 min doomscrolling");
-		expect(formatEquivalent(0.001, "brain")).toBe("3.0 min human brain");
+		expect(formatEquivalent(0.001, "doomscroll")).toBe("\u{1F4F1} 2m24");
+		expect(formatEquivalent(0.001, "brain")).toBe("\u{1F9E0} 3m");
 	});
 	it("returns undefined for unknown ids or invalid energy", () => {
 		expect(formatEquivalent(0.001, "nope" as never)).toBeUndefined();
 		expect(formatEquivalent(-1, "doomscroll")).toBeUndefined();
+	});
+});
+
+describe("formatEquivalentDetail", () => {
+	it("spells out the activity for the slash command", () => {
+		expect(formatEquivalentDetail(0.001, "doomscroll")).toBe(
+			"\u{1F4F1} 2m 24s doomscrolling on an iPhone 15",
+		);
+		expect(formatEquivalentDetail(0.001, "brain")).toBe(
+			"\u{1F9E0} 3m powering a human brain",
+		);
+	});
+	it("returns undefined for invalid energy", () => {
+		expect(formatEquivalentDetail(-1, "brain")).toBeUndefined();
 	});
 });
 

@@ -24,7 +24,7 @@ import {
 	type CostPayload,
 	addEntryToTotals,
 	emptyTotals,
-	formatEquivalent,
+	formatEquivalentDetail,
 	formatJoules,
 	formatStatusText,
 	formatUsd,
@@ -600,9 +600,12 @@ export default async function (pi: ExtensionAPI) {
 					`Last response: ${formatWh(lastEntry.energyKwh)} \u00B7 ${formatUsd(lastEntry.costUsd)}${lastEntry.costSource === "energy-rate" ? " (est.)" : ""}`,
 				);
 			}
-			for (const id of settings.equivalents) {
-				const equivalent = formatEquivalent(totals.energyKwh, id);
-				if (equivalent) lines.push(`Equivalent: ${equivalent}`);
+			const equivalents = settings.equivalents
+				.map((id) => formatEquivalentDetail(totals.energyKwh, id))
+				.filter((line): line is string => line !== undefined);
+			if (equivalents.length > 0) {
+				lines.push("Equivalent:");
+				lines.push(...equivalents);
 			}
 			ctx.ui.notify(lines.join("\n"), "info");
 		},
