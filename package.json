@@ -1,0 +1,39 @@
+{
+	"name": "@burnto/pi-neuralwatt",
+	"version": "0.1.0",
+	"type": "module",
+	"description": "Neuralwatt provider for pi. Shows the charged cost in pi's footer and session energy in the status line.",
+	"keywords": ["pi-package", "neuralwatt", "energy", "provider"],
+	"license": "MIT",
+	"author": "burnto",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/burnto/pi-neuralwatt.git"
+	},
+	"homepage": "https://github.com/burnto/pi-neuralwatt#readme",
+	"bugs": "https://github.com/burnto/pi-neuralwatt/issues",
+	"files": ["index.ts", "lib.ts", "README.md"],
+	"pi": {
+		"extensions": ["./index.ts"]
+	},
+	"scripts": {
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"typecheck": "tsc --noEmit",
+		"check": "npm run typecheck && npm test"
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-ai": "*",
+		"@earendil-works/pi-coding-agent": "*"
+	},
+	"devDependencies": {
+		"@earendil-works/pi-ai": "^1.0.0",
+		"@earendil-works/pi-coding-agent": "^1.0.0",
+		"@types/node": "^22.10.0",
+		"typescript": "^5.7.2",
+		"vitest": "^3.2.4"
+	},
+	"publishConfig": {
+		"access": "public"
+	}
+}
