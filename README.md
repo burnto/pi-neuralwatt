@@ -1,13 +1,14 @@
 # @burnto/pi-neuralwatt
 
-Neuralwatt model provider for pi. It puts the cost Neuralwatt actually charges into pi's footer, and shows measured session energy in the status line.
+Neuralwatt model provider for pi. It puts the cost Neuralwatt actually charges into pi's footer and shows measured session energy in the status line.
 
-## What it does well
+## What it does
 
-- **Charged cost, not a token-price guess.** Every Neuralwatt response carries its charged cost in an SSE comment: measured energy times the flex multiplier times your rate, capped at the token price. The extension writes that number into the response's usage record, so pi's footer total matches your bill. Pi's default cost is computed from token list prices and can differ by several times.
-- **Energy in the status line.** `⚡︎` is reserved for energy. The indicator accumulates the measured `energy_kwh` from each response, so you can see how much energy a session uses.
-- **Recorded in session history.** Each measured response is saved as a session entry that never enters model context. The totals survive resume and fork, and they follow the active branch, so rewinding a conversation does not double-count abandoned turns.
-- **Configurable, with everyday units.** Pick what the indicator shows, give it a theme color, and optionally add comparisons like minutes of doomscrolling or running a human brain.
+Neuralwatt sends its charged cost with every response. The extension writes that number into the response's usage record, so pi's footer shows what you were billed rather than the token list price.
+
+A separate `⚡️` indicator accumulates measured `energy_kwh` for the session.
+
+Every measured response is saved as a session entry that never enters model context. The totals survive resume and fork, and they follow the active branch, so rewinding a conversation does not double-count abandoned turns. You can also add an everyday comparison, like how long the session could run a phone, a brain, or an LED bulb.
 
 ## Install
 
@@ -36,27 +37,35 @@ The status line shows session energy while a Neuralwatt model is active on an en
 
 | Mode | Example |
 | --- | --- |
-| `session` (default) | `⚡︎1.42 Wh` |
-| `both` | `⚡︎1.42 Wh (+0.08 Wh)` |
-| `last` | `⚡︎0.08 Wh` |
+| `session` (default) | `⚡️ 1.42 Wh` |
+| `both` | `⚡️ 1.42 Wh (+0.08 Wh)` |
+| `last` | `⚡️ 0.08 Wh` |
 | `off` | hidden |
 
-With equivalents enabled, the indicator appends them:
+Equivalents append to the indicator as an icon and a duration:
 
 ```text
-⚡︎1.42 Wh · 3.4 min doomscrolling
+⚡️ 1.42 Wh · 🧠 4m16
 ```
 
-| Equivalent | Rate | Basis |
-| --- | --- | --- |
-| Doomscrolling | 416 mWh/min | ~25 W for a phone and its network |
-| Human brain | 333 mWh/min | ~20 W, the commonly cited figure |
-| 10 W LED bulb | 167 mWh/min | 10 W |
+A zero secondary unit is dropped, so two hours reads as `2h` and ninety seconds as `1m30`.
+
+| Icon | Equivalent | Rate | Basis |
+| --- | --- | --- | --- |
+| 📱 | Doomscrolling | 416 mWh/min | ~25 W for a phone and its network |
+| 🧠 | Human brain | 333 mWh/min | ~20 W, the standard cerebral metabolic estimate |
+| 💡 | 10 W LED bulb | 167 mWh/min | 10 W |
 
 ## Commands
 
-- `/neuralwatt:cost` shows session energy, charged cost, request count, the last response, and any configured equivalents.
-- `/neuralwatt:settings` opens a menu for the indicator mode, color, equivalents, the per-response transcript line, and the fallback rate.
+`/neuralwatt:cost` prints session energy, charged cost, request count, the last response, and each configured equivalent with its activity spelled out.
+
+```text
+Equivalent:
+📱 2m 24s doomscrolling on an iPhone 15
+```
+
+`/neuralwatt:settings` opens a menu for the indicator mode, color, equivalents, the per-response transcript line, and the fallback rate. The color choices preview the status text in each theme color.
 
 ## Cost sources
 
