@@ -248,9 +248,17 @@ const PI_REASONING_LEVELS = [
  * Maps Neuralwatt's `metadata.reasoning` contract onto Pi's `ThinkingLevelMap`.
  *
  * Pi sends the mapped value as `reasoning_effort`; `null` disables a level.
- * A level must be listed to appear, so unsupported levels become `null` rather
- * than being omitted. `xhigh`/`max` additionally require a defined value to
- * appear at all.
+ * Pi's `getSupportedThinkingLevels` treats an *undefined* entry as supported
+ * for `off`/`minimal`/`low`/`medium`/`high`, so a level we cannot confirm must
+ * be listed explicitly as `null` rather than omitted. `xhigh`/`max` differ:
+ * they only appear when a value is defined.
+ *
+ * Pi exposes no public per-model "default thinking level" in the model config,
+ * so `metadata.reasoning.default_enabled` / `default_effort` cannot be honored
+ * here. Pi chooses the active level from its own global or per-model thinking
+ * setting (defaulting to `medium`) and clamps it with this map; the provider
+ * cannot inject a model-specific default. Those fields are therefore
+ * documented as an accepted limitation, not silently reinterpreted.
  */
 export function buildThinkingLevelMap(
 	model: NeuralwattApiModel,
@@ -262,11 +270,20 @@ export function buildThinkingLevelMap(
 	if (!meta) {
 		/*
 		 * Conservative fallback for catalogs written before `metadata.reasoning`.
-		 * Only claim effort control when the capability flags say it exists, and
-		 * never blanket-disable low/medium.
+		 * Without the contract we only claim the endpoints (`high`, `max`) plus
+		 * `off`; every other Pi level is explicitly disabled. Omitting them would
+		 * let Pi default them to "supported" and send unsupported efforts.
 		 */
 		if (caps.reasoning_effort === true) {
-			return { off: "none", high: "high", xhigh: "max" };
+			return {
+				off: "none",
+				minimal: null,
+				low: null,
+				medium: null,
+				high: "high",
+				xhigh: null,
+				max: "max",
+			};
 		}
 		return {
 			off: null,
@@ -388,6 +405,18 @@ export function isFinitePositiveNumber(value: unknown): value is number {
 
 export function isFiniteNonNegativeNumber(value: unknown): value is number {
 	return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+/*
+ * Pi treats PI_OFFLINE as set when it is "1", "true", or "yes"
+ * (case-insensitive); see pi's CLI help and its own offline checks. Matching
+ * that here keeps extension-owned discovery requests suppressed exactly when
+ * Pi considers itself offline.
+ */
+export function isOfflineValue(value: unknown): boolean {
+	if (typeof value !== "string" || value === "") return false;
+	const normalized = value.toLowerCase();
+	return value === "1" || normalized === "true" || normalized === "yes";
 }
 
 export function isNeuralwattChatCompletionsUrl(
@@ -825,7 +854,7 @@ export function withChargedCost(
 
 export function formatUsd(value: number): string {
 	if (value > 0 && value < 0.00001) return "<$0.00001";
-	if (value < 0.01) return `$${value.toFixed(5)}`;
+	if (value > 0 && value < 0.01) return `$${value.toFixed(5)}`;
 	return `$${value.toFixed(2)}`;
 }
 
@@ -886,15 +915,6 @@ export function formatDurationSeconds(
 	return style === "compact"
 		? `${value}${unit}${padded}`
 		: `${value}${unit} ${padded}${remainder.unit}`;
-}
-
-/** Minutes-based compatibility wrapper used by the settings preview. */
-export function formatCompactDuration(minutes: number): string {
-	return formatDurationSeconds(minutes * 60, "compact");
-}
-
-export function formatSpacedDuration(minutes: number): string {
-	return formatDurationSeconds(minutes * 60, "spaced");
 }
 
 export interface EquivalentPreset {
@@ -1137,9 +1157,6 @@ export function isThemeColorName(value: unknown): value is ThemeColorName {
 	);
 }
 
-/** Legacy preset ids that are no longer supported and are dropped on load. */
-export const OBSOLETE_PRESET_IDS = ["doomscroll"] as const;
-
 /*
  * Settings parsing never throws and never returns a partially applied
  * catalog. Prototype-chain keys are ignored by copying onto a fresh object and
@@ -1245,9 +1262,8 @@ export function formatStatusText(
 	const energyKwh = usingLast ? lastReported : totals.energyKwh;
 	const parts = [`${mark} ${formatWh(energyKwh)}`];
 
-	if (settings.energyStatus === "both") {
-		const lastKwh = last?.energy.status === "reported" ? last.energy.kwh : 0;
-		parts.push(`(+${formatWh(lastKwh)})`);
+	if (settings.energyStatus === "both" && last?.energy.status === "reported") {
+		parts.push(`(+${formatWh(last.energy.kwh)})`);
 	}
 	if (!usingLast && totals.energyReported > 0) {
 		for (const id of settings.equivalents) {

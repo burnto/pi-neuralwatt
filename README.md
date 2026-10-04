@@ -10,7 +10,7 @@ A separate `⚡️` indicator shows reported energy in pi's status area while a 
 
 Totals follow the active branch, so rewinding or forking a conversation does not double-count abandoned turns.
 
-Reported energy is provider-reported, not measured by this extension, and a reported dollar value is not proof of an incremental charge. Coverage is explicit: if energy or cost metadata is missing for a response, it is recorded as missing rather than counted as zero.
+Reported energy is provider-reported, not measured by this extension, and a reported dollar value is not proof of an incremental charge. It covers the accelerator work Neuralwatt attributes to the request and excludes broader system and datacenter overhead (host power, cooling, networking, facility losses). Coverage is explicit: if energy or cost metadata is missing for a response, it is recorded as missing rather than counted as zero.
 
 ## Install
 

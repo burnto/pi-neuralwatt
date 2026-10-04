@@ -39,8 +39,8 @@ describe("formatUsd", () => {
 	it("collapses sub-0.00001 positive values", () => {
 		expect(formatUsd(0.000001)).toBe("<$0.00001");
 	});
-	it("handles zero", () => {
-		expect(formatUsd(0)).toBe("$0.00000");
+	it("handles zero without the sub-cent precision", () => {
+		expect(formatUsd(0)).toBe("$0.00");
 	});
 });
 
@@ -163,6 +163,39 @@ describe("formatStatusText", () => {
 		expect(
 			formatStatusText(totals, last, { ...DEFAULT_SETTINGS, energyStatus: "both" }),
 		).toBe("\u26A1\uFE0F 1.00 Wh (+0.500 Wh)");
+	});
+
+	it("omits the parenthesized last reading in both mode when last energy is absent", () => {
+		// Session total is known, but this response had no usable energy reading.
+		const noLastEnergy: ResponseTelemetry = {
+			...last,
+			energy: { status: "missing" },
+		};
+		expect(
+			formatStatusText(totals, noLastEnergy, {
+				...DEFAULT_SETTINGS,
+				energyStatus: "both",
+			}),
+		).toBe("\u26A1\uFE0F 1.00 Wh");
+		expect(
+			formatStatusText(totals, undefined, {
+				...DEFAULT_SETTINGS,
+				energyStatus: "both",
+			}),
+		).toBe("\u26A1\uFE0F 1.00 Wh");
+	});
+
+	it("still shows an actual reported zero in both mode", () => {
+		const zeroLast: ResponseTelemetry = {
+			...last,
+			energy: { status: "reported", kwh: 0 },
+		};
+		expect(
+			formatStatusText(totals, zeroLast, {
+				...DEFAULT_SETTINGS,
+				energyStatus: "both",
+			}),
+		).toBe("\u26A1\uFE0F 1.00 Wh (+0 Wh)");
 	});
 
 	it("hides when the master switch is off", () => {

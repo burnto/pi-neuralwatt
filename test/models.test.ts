@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import type { Model } from "@earendil-works/pi-ai";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import {
 	buildThinkingLevelMap,
+	isOfflineValue,
 	parseCachedModels,
 	mapModelsResponse,
 } from "../lib.ts";
@@ -29,6 +32,59 @@ const qwen = {
 		limits: { max_context_length: 262128, max_output_tokens: 131072 },
 	},
 };
+
+describe("buildThinkingLevelMap", () => {
+	const levels = (model: Parameters<typeof buildThinkingLevelMap>[0]) =>
+		getSupportedThinkingLevels({
+			reasoning: true,
+			thinkingLevelMap: buildThinkingLevelMap(model),
+		} as Model<"openai-completions">);
+
+	it("exposes only the claimed endpoints in the pre-metadata fallback", () => {
+		// No metadata.reasoning: Pi treats undefined entries as supported, so the
+		// fallback must null every level it cannot confirm.
+		const fallback = {
+			id: "legacy",
+			metadata: {
+				capabilities: { reasoning: true, reasoning_effort: true },
+			},
+		};
+		expect(levels(fallback)).toEqual(["off", "high", "max"]);
+	});
+
+	it("disables reasoning levels entirely when effort control is absent", () => {
+		const noEffort = {
+			id: "mandatory",
+			metadata: { capabilities: { reasoning: true } },
+		};
+		expect(levels(noEffort)).toEqual([]);
+	});
+
+	it("maps the reasoning contract's supported efforts and aliases", () => {
+		expect(levels(qwen as never)).toEqual([
+			"off",
+			"minimal",
+			"low",
+			"medium",
+			"high",
+			"xhigh",
+			"max",
+		]);
+		expect(buildThinkingLevelMap(qwen as never)?.minimal).toBe("low");
+		expect(buildThinkingLevelMap(qwen as never)?.max).toBe("xhigh");
+	});
+});
+
+describe("isOfflineValue", () => {
+	it("matches pi's offline semantics", () => {
+		for (const value of ["1", "true", "TRUE", "yes", "Yes"]) {
+			expect(isOfflineValue(value)).toBe(true);
+		}
+		for (const value of ["0", "false", "no", "", undefined, null, 1]) {
+			expect(isOfflineValue(value)).toBe(false);
+		}
+	});
+});
 
 describe("mapModelsResponse", () => {
 	it("maps the customer catalog and keeps enrolled preview models", () => {

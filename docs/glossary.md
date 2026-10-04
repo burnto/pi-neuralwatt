@@ -14,6 +14,16 @@ Neuralwatt sends per-response metadata on the chat-completions SSE stream as com
 
 `energy_kwh` from the `: energy` comment, recorded as an energy reading with status `reported`. It is provider-reported, not a locally measured value, and the extension does not claim to measure anything itself. A reported `0` is a real zero, distinct from missing metadata.
 
+This is the energy Neuralwatt attributes to the accelerator work for the request. It excludes broader system and datacenter overhead such as host power, cooling, networking, and facility losses; it is not a full-boundary energy figure.
+
+## Thinking level map
+
+Pi's `thinkingLevelMap` on a model: maps pi thinking levels (`off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`) to provider `reasoning_effort` strings, with `null` disabling a level. Pi treats an *undefined* entry as supported for `off`/`minimal`/`low`/`medium`/`high`, but requires a defined value for `xhigh`/`max`. The extension therefore lists every level explicitly; the pre-metadata fallback claims only `off`, `high`, and `max`. `metadata.reasoning.mandatory` disables `off`. `default_enabled`/`default_effort` are not honored because pi exposes no public per-model default: pi chooses the active level from its own thinking setting (default `medium`) and clamps it with this map.
+
+## Offline mode
+
+`PI_OFFLINE` set to `1`, `true`, or `yes` (case-insensitive), matching pi. It suppresses extension-owned discovery requests (`/models`, `/quota`); normal user-requested inference is pi's responsibility.
+
 ## Attribution method / measurement availability
 
 Optional fields on the energy comment. `attribution_method` is preserved as provenance. `measurement_available: false` means the reading is `unavailable`; it is never presented as a verified measurement or turned into a cost estimate.

@@ -22,12 +22,21 @@ If the base provider has no `streamSimple`, the provider is still registered but
 
 Cache-first policy:
 
-- The cache is validated on read (`parseCachedModels`). Corrupt entries are dropped instead of being cast into model configs.
+- The cache is validated on read (`parseCachedModels`) and schema-versioned. Corrupt entries, or a file whose `version` is missing or unknown, are ignored instead of being cast into model configs.
 - If a usable cache exists, it is registered and any refresh runs without blocking startup. A first run or a cache-less state awaits a bounded refresh so headless `--model` resolution can still see the authenticated catalog.
 - A refresh that returns only the public catalog never replaces an authenticated catalog.
-- The cache stores a SHA-256 fingerprint of the credential used to fetch an authenticated catalog. On load, a fingerprint mismatch discards the private catalog rather than retaining another account's models. Raw keys are never stored.
+- The cache stores a SHA-256 fingerprint of the credential used to fetch an authenticated catalog. On load, a fingerprint mismatch discards the private catalog rather than retaining another account's models. An unresolved templated credential counts as a mismatch. Raw keys are never stored.
+- Discarding the private catalog also clears the in-memory authenticated flag. Keeping it would make `refreshModels` reject the replacement public catalog and leave the provider registered with zero models.
+
+Pi's offline mode (`PI_OFFLINE` set to `1`, `true`, or `yes`) suppresses every extension-owned discovery request, matching pi's own check. Normal user-requested inference is pi's responsibility.
 
 Pre-session startup key resolution reads `NEURALWATT_API_KEY`, then a plain `api_key` in `auth.json`, and rejects `$`-templated values so an unresolved shell/env expression is never sent as a bearer token. The session-start refresh uses the registry-resolved key.
+
+## Reasoning levels
+
+`metadata.reasoning` in the catalog is mapped onto pi's `thinkingLevelMap`. Pi treats an *undefined* entry as supported for `off`/`minimal`/`low`/`medium`/`high`, but only shows `xhigh`/`max` when a value is defined, so every level the extension cannot confirm is written as explicit `null`. The pre-metadata fallback claims only `off`, `high`, and `max` instead of letting pi default the rest to supported. `off` is disabled (`null`) when the contract says reasoning is mandatory; otherwise it maps to the backend's no-reasoning effort.
+
+Pi has no public per-model default thinking level. `metadata.reasoning.default_enabled` and `default_effort` therefore cannot be honored: pi selects the active level from its own global or per-model thinking setting (defaulting to `medium`) and clamps it with this map. The fields are documented as an accepted limitation rather than reinterpreted.
 
 ## SSE tap
 
@@ -81,6 +90,7 @@ Pi 1.0.0 has no public API to rebuild existing transcript entries. Turning the m
 ## Gotchas
 
 - npm's `min-release-age` can block `@earendil-works/pi-ai@^1.0.0` on a fresh install. Use `npm install --min-release-age=0`. The lockfile is committed, so CI uses `npm ci`.
+- `npm audit` findings in this repo are development-tool advisories (`vitest`, and transitive packages under pi's peer/dev tree). The published package ships only `index.ts`, `lib.ts`, and `README.md`; pi provides the runtime dependencies as peer dependencies, so these are not bundled runtime vulnerabilities.
 - Two copies of this extension loaded in one pi process fight over provider registration. Test from source with `-ne` so an installed copy does not win.
 
 ## Deferred

@@ -46,6 +46,7 @@ import {
 	isEnergyCostData,
 	isFinitePositiveNumber,
 	isNeuralwattChatCompletionsUrl,
+	isOfflineValue,
 	isSafeDisplayString,
 	isValidKeyId,
 	isValidPresetId,
@@ -151,6 +152,14 @@ async function readCachedModels(): Promise<CachedCatalog> {
 		const parsed = JSON.parse(
 			await readFile(MODELS_CACHE_PATH, "utf8"),
 		) as ModelsCacheFile;
+		/*
+		 * Only trust a cache this package wrote. A missing or unknown version
+		 * means the shape is not ours to interpret, so degrade to no cache
+		 * rather than casting unknown data into model configs.
+		 */
+		if (parsed.version !== CACHE_VERSION) {
+			return { models: [], authenticated: false, fetchedAt: 0 };
+		}
 		const fetchedAt =
 			typeof parsed.fetchedAt === "string"
 				? Date.parse(parsed.fetchedAt) || 0
@@ -224,7 +233,7 @@ async function writeSettingsFile(
 }
 
 function isOfflineMode(): boolean {
-	return process.env.PI_OFFLINE === "1" || process.env.PI_OFFLINE === "true";
+	return isOfflineValue(process.env.PI_OFFLINE);
 }
 
 /*
@@ -549,6 +558,18 @@ export default async function (pi: ExtensionAPI) {
 	let credentialFingerprint: string | undefined = fingerprintCredential(
 		await resolveStartupApiKey(),
 	);
+	/*
+	 * A cached authenticated catalog is trusted only when it was fetched with
+	 * the credential resolvable at startup. A mismatch — including a templated
+	 * credential that cannot be resolved until session_start — discards the
+	 * private models. Clearing the "authenticated" protection alongside the
+	 * models is essential: otherwise a later public refresh is rejected and the
+	 * provider registers with zero models.
+	 */
+	const cacheCredentialMismatch =
+		cachedCatalog.authenticated &&
+		cachedCatalog.credentialFingerprint !== undefined &&
+		cachedCatalog.credentialFingerprint !== credentialFingerprint;
 
 	const accountContext = (): AccountContext | undefined => {
 		if (!quotaSnapshot) return undefined;
@@ -604,7 +625,8 @@ export default async function (pi: ExtensionAPI) {
 		return quotaInflight;
 	};
 
-	let registeredAuthenticated = cachedCatalog.authenticated;
+	let registeredAuthenticated =
+		cachedCatalog.authenticated && !cacheCredentialMismatch;
 	let refreshedAuthenticated = false;
 
 	const refreshModels = async (apiKey: string | undefined): Promise<void> => {
@@ -697,12 +719,7 @@ export default async function (pi: ExtensionAPI) {
 	};
 
 	/* ------------------------ provider setup ------------------------- */
-	const cacheModels =
-		cachedCatalog.authenticated &&
-		cachedCatalog.credentialFingerprint &&
-		cachedCatalog.credentialFingerprint !== credentialFingerprint
-			? []
-			: cachedCatalog.models;
+	const cacheModels = cacheCredentialMismatch ? [] : cachedCatalog.models;
 	baseProviderAvailable = registerProvider(
 		pi,
 		cacheModels,
