@@ -82,7 +82,7 @@ The active conversation branch, from `sessionManager.getBranch()`. Totals rebuil
 
 ## `message_end` / `responseId`
 
-`message_end` is the pi hook that fires when a response finishes. `responseId` is the completion id. The extension matches a captured SSE record to the finished message by `responseId` only; a capture or message without one is never paired.
+`message_end` is the pi hook that fires when a response finishes. `responseId` is the completion id. The extension matches a captured SSE record to the finished message by `responseId` only; a capture or message without one is never paired, and there is no positional fallback. The terminal `done`/`error` event is held until capture is joined, so `message_end` sees it. An already-recorded `responseId` is ignored on a repeated `message_end`, so a completed response is recorded once.
 
 ## Cache warmer / `cache_warm`
 
