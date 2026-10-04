@@ -1,85 +1,105 @@
 import { describe, expect, it } from "vitest";
-import { mapModelsResponse } from "../lib.ts";
+import {
+	buildThinkingLevelMap,
+	parseCachedModels,
+	mapModelsResponse,
+} from "../lib.ts";
 
-const deepseekV4Pro = {
-	id: "deepseek-v4-pro",
+const qwen = {
+	id: "qwen-3.8-27b",
 	object: "model",
 	created: 0,
 	owned_by: "neuralwatt",
-	max_model_len: 1048560,
+	max_model_len: 262128,
 	metadata: {
-		display_name: "DeepSeek V4-Pro",
+		display_name: "Qwen 3.8 27B",
 		pricing: {
-			input_per_million: 1.0,
-			output_per_million: 3.0,
-			cached_input_per_million: 0.1,
+			input_per_million: 0.45,
+			output_per_million: 3.2,
+			cached_input_per_million: 0.25,
 			cached_output_per_million: null,
-			currency: "USD",
-			pricing_tbd: false,
 		},
-		capabilities: {
-			tools: true,
-			json_mode: true,
-			vision: false,
-			reasoning: true,
-			reasoning_effort: true,
-			streaming: true,
-			system_role: true,
-			developer_role: false,
-			hosted_tools: false,
+		capabilities: { vision: true, reasoning: true, reasoning_effort: true },
+		reasoning: {
+			mandatory: false,
+			supported_efforts: ["xhigh", "medium", "low", "none"],
+			accepted_efforts: ["max", "xhigh", "high", "medium", "low", "minimal", "none"],
+			effort_aliases: { max: "xhigh", high: "xhigh", minimal: "low" },
 		},
-		limits: {
-			max_context_length: 1048560,
-			max_output_tokens: 393216,
-			max_images: null,
-		},
+		limits: { max_context_length: 262128, max_output_tokens: 131072 },
 	},
 };
 
 describe("mapModelsResponse", () => {
-	it("maps the customer catalog, keeping enrolled preview models", () => {
-		const publicModel = { id: "glm-5.3", max_model_len: 131_072 };
+	it("maps the customer catalog and keeps enrolled preview models", () => {
 		const out = mapModelsResponse({
 			scope: "customer",
-			data: [publicModel, deepseekV4Pro],
+			data: [qwen, { id: "private-preview" }],
 		});
 		expect(out.authenticated).toBe(true);
 		expect(out.models.map((m) => m.id).sort()).toEqual([
-			"deepseek-v4-pro",
-			"glm-5.3",
+			"private-preview",
+			"qwen-3.8-27b",
 		]);
-		const pro = out.models.find((m) => m.id === "deepseek-v4-pro");
-		expect(pro?.name).toBe("DeepSeek V4-Pro");
-		expect(pro?.reasoning).toBe(true);
-		expect(pro?.contextWindow).toBe(1048560);
-		expect(pro?.maxTokens).toBe(393216);
 	});
 
 	it("reports an unauthenticated public catalog", () => {
-		const out = mapModelsResponse({ scope: "public", data: [{ id: "glm-5.3" }] });
+		const out = mapModelsResponse({ scope: "public", data: [qwen] });
 		expect(out.authenticated).toBe(false);
-		expect(out.models.map((m) => m.id)).toEqual(["glm-5.3"]);
+		expect(out.models.map((m) => m.id)).toEqual(["qwen-3.8-27b"]);
 	});
 
-	it("treats a missing scope as unauthenticated", () => {
-		const out = mapModelsResponse({ data: [{ id: "glm-5.3" }] });
-		expect(out.authenticated).toBe(false);
+	it("treats a missing scope as unauthenticated and tolerates missing data", () => {
+		expect(mapModelsResponse({ data: [qwen] }).authenticated).toBe(false);
+		expect(mapModelsResponse({})).toEqual({ models: [], authenticated: false });
 	});
 
-	it("tolerates missing data", () => {
-		const out = mapModelsResponse({});
-		expect(out.models).toEqual([]);
-		expect(out.authenticated).toBe(false);
-	});
-
-	it("drops unusable models from the listing", () => {
+	it("drops unusable models", () => {
 		const out = mapModelsResponse({
 			scope: "customer",
-			data: [
-				{ id: "tbd", metadata: { pricing: { pricing_tbd: true } } },
-				{ id: "ok" },
-			],
+			data: [{ id: "tbd", metadata: { pricing: { pricing_tbd: true } } }, { id: "ok" }],
 		});
 		expect(out.models.map((m) => m.id)).toEqual(["ok"]);
+	});
+
+	it("keeps the reasoning map on mapped models", () => {
+		const out = mapModelsResponse({ scope: "public", data: [qwen] });
+		expect(out.models[0].thinkingLevelMap).toEqual(
+			buildThinkingLevelMap(qwen as never),
+		);
+	});
+});
+
+describe("parseCachedModels", () => {
+	const valid = {
+		id: "qwen-3.8-27b",
+		name: "Qwen",
+		reasoning: true,
+		input: ["text", "image"],
+		cost: { input: 0.45, output: 3.2, cacheRead: 0.25, cacheWrite: 0 },
+		contextWindow: 262128,
+		maxTokens: 131072,
+		compat: { maxTokensField: "max_tokens" },
+	};
+
+	it("keeps valid model configs", () => {
+		expect(parseCachedModels({ models: [valid] })).toEqual([valid]);
+	});
+
+	it("degrades safely on corrupt cache data rather than casting it", () => {
+		expect(parseCachedModels(null)).toEqual([]);
+		expect(parseCachedModels({ models: "nope" })).toEqual([]);
+		expect(
+			parseCachedModels({
+				models: [
+					{ ...valid, cost: { input: "free" } },
+					{ ...valid, contextWindow: -1 },
+					{ ...valid, id: "" },
+					{ ...valid, input: ["audio"] },
+					{ nonsense: true },
+					valid,
+				],
+			}),
+		).toEqual([valid]);
 	});
 });

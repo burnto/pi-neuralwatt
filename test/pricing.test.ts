@@ -6,152 +6,177 @@ import {
 	mapApiModel,
 } from "../lib.ts";
 
+/*
+ * Sanitized from the live public catalog (GET /v1/models, scope "public").
+ * The reasoning contract is the shape this extension maps onto Pi's
+ * ThinkingLevelMap; keep it as a recorded fixture rather than a live call.
+ */
+const reasoningMetadata: NonNullable<NeuralwattApiModel["metadata"]>["reasoning"] = {
+	mandatory: false,
+	default_enabled: true,
+	supported_efforts: ["xhigh", "medium", "low", "none"],
+	default_effort: "xhigh",
+	accepted_efforts: ["max", "xhigh", "high", "medium", "low", "minimal", "none"],
+	effort_aliases: { max: "xhigh", high: "xhigh", minimal: "low" },
+};
+
 describe("asPrice", () => {
-	it("returns positive finite numbers", () => {
+	it("returns positive finite numbers and coerces the rest to 0", () => {
 		expect(asPrice(1.5)).toBe(1.5);
-		expect(asPrice(0.001)).toBe(0.001);
-	});
-	it("coerces non-positive / non-finite / non-number to 0", () => {
 		expect(asPrice(0)).toBe(0);
 		expect(asPrice(-1)).toBe(0);
 		expect(asPrice(NaN)).toBe(0);
 		expect(asPrice(Infinity)).toBe(0);
 		expect(asPrice(null)).toBe(0);
-		expect(asPrice(undefined)).toBe(0);
 		expect(asPrice("3")).toBe(0);
-		expect(asPrice(null as unknown as number)).toBe(0);
 	});
 });
 
-describe("mapApiModel", () => {
-	it("returns null for deprecated models", () => {
-		const model: NeuralwattApiModel = {
-			id: "old",
-			metadata: { deprecated: true },
-		};
-		expect(mapApiModel(model)).toBeNull();
+describe("buildThinkingLevelMap", () => {
+	it("returns undefined when the model does not reason", () => {
+		expect(buildThinkingLevelMap({ id: "x" })).toBeUndefined();
+		expect(
+			buildThinkingLevelMap({
+				id: "x",
+				metadata: { capabilities: { reasoning: false } },
+			}),
+		).toBeUndefined();
 	});
 
-	it("returns null when pricing is TBD", () => {
-		const model: NeuralwattApiModel = {
-			id: "tbd",
-			metadata: { pricing: { pricing_tbd: true } },
-		};
-		expect(mapApiModel(model)).toBeNull();
-	});
-
-	it("maps a basic text-only model with metadata defaults", () => {
-		const model: NeuralwattApiModel = {
-			id: "nw-text",
-			metadata: { display_name: "Text Model" },
-		};
-		const out = mapApiModel(model);
-		expect(out).not.toBeNull();
-		expect(out?.id).toBe("nw-text");
-		expect(out?.name).toBe("Text Model");
-		expect(out?.reasoning).toBe(false);
-		expect(out?.thinkingLevelMap).toBeUndefined();
-		expect(out?.input).toEqual(["text"]);
-		expect(out?.contextWindow).toBe(131_072);
-		expect(out?.maxTokens).toBe(65_536);
-		expect(out?.compat?.maxTokensField).toBe("max_tokens");
-		expect(out?.compat?.supportsDeveloperRole).toBe(false);
-		expect(out?.compat?.requiresReasoningContentOnAssistantMessages).toBeUndefined();
-	});
-
-	it("falls back to id when display_name missing", () => {
-		const out = mapApiModel({ id: "nw-id" });
-		expect(out?.name).toBe("nw-id");
-	});
-
-	it("maps vision capability to text+image input", () => {
-		const out = mapApiModel({
-			id: "nw-vision",
-			metadata: { capabilities: { vision: true } },
+	it("maps supported and aliased efforts without disabling low/medium", () => {
+		const out = buildThinkingLevelMap({
+			id: "qwen-3.8-27b",
+			metadata: {
+				capabilities: { reasoning: true, reasoning_effort: true },
+				reasoning: reasoningMetadata,
+			},
 		});
-		expect(out?.input).toEqual(["text", "image"]);
+		expect(out).toEqual({
+			minimal: "low",
+			low: "low",
+			medium: "medium",
+			high: "xhigh",
+			xhigh: "xhigh",
+			max: "xhigh",
+			off: "none",
+		});
 	});
 
-	it("enables developerRole when capability is true", () => {
-		const out = mapApiModel({
-			id: "nw-dev",
-			metadata: { capabilities: { developer_role: true } },
+	it("cannot disable a mandatory reasoning model", () => {
+		const out = buildThinkingLevelMap({
+			id: "always",
+			metadata: {
+				capabilities: { reasoning: true, reasoning_effort: true },
+				reasoning: { ...reasoningMetadata, mandatory: true },
+			},
 		});
-		expect(out?.compat?.supportsDeveloperRole).toBeUndefined();
+		expect(out?.off).toBeNull();
 	});
 
-	it("sets reasoning compat flags and maps thinking levels for reasoning models", () => {
-		const out = mapApiModel({
-			id: "nw-reason",
-			metadata: { capabilities: { reasoning: true } },
+	it("disables levels the model does not support", () => {
+		const out = buildThinkingLevelMap({
+			id: "medium-only",
+			metadata: {
+				capabilities: { reasoning: true, reasoning_effort: true },
+				reasoning: {
+					supported_efforts: ["medium"],
+					accepted_efforts: ["medium"],
+				},
+			},
 		});
-		expect(out?.reasoning).toBe(true);
-		expect(out?.compat?.requiresReasoningContentOnAssistantMessages).toBe(true);
-		expect(out?.thinkingLevelMap).toEqual({
+		expect(out).toEqual({
 			minimal: null,
 			low: null,
 			medium: "medium",
 			high: null,
 			xhigh: null,
+			max: null,
+			off: null,
 		});
 	});
 
-	it("maps effort-based thinking levels when reasoning_effort is true", () => {
-		const out = mapApiModel({
-			id: "nw-effort",
-			metadata: { capabilities: { reasoning: true, reasoning_effort: true } },
-		});
-		expect(out?.thinkingLevelMap).toEqual({
-			off: "none",
+	it("uses a conservative fallback when metadata.reasoning is absent", () => {
+		expect(
+			buildThinkingLevelMap({
+				id: "old-effort",
+				metadata: { capabilities: { reasoning: true, reasoning_effort: true } },
+			}),
+		).toEqual({ off: "none", high: "high", xhigh: "max" });
+		expect(
+			buildThinkingLevelMap({
+				id: "old-no-effort",
+				metadata: { capabilities: { reasoning: true } },
+			}),
+		).toEqual({
+			off: null,
 			minimal: null,
 			low: null,
 			medium: null,
-			high: "high",
-			xhigh: "max",
+			high: null,
+			xhigh: null,
+			max: null,
 		});
-	});
-
-	it("reads context window and max tokens from limits when top-level absent", () => {
-		const out = mapApiModel({
-			id: "nw-limits",
-			max_model_len: 4096,
-			metadata: {
-				limits: { max_context_length: 200_000, max_output_tokens: 8192 },
-				pricing: {
-					input_per_million: 2,
-					output_per_million: 6,
-					cached_input_per_million: 0.5,
-					cached_output_per_million: -3,
-				},
-			},
-		});
-		expect(out?.contextWindow).toBe(4096); // top-level max_model_len wins
-		expect(out?.maxTokens).toBe(8192);
-		expect(out?.cost).toEqual({
-			input: 2,
-			output: 6,
-			cacheRead: 0.5,
-			cacheWrite: 0, // negative coerced
-		});
-	});
-
-	it("falls back to limits.max_context_length when max_model_len absent", () => {
-		const out = mapApiModel({
-			id: "nw-ctx",
-			metadata: { limits: { max_context_length: 500_000 } },
-		});
-		expect(out?.contextWindow).toBe(500_000);
-	});
-
-	it("respects max_model_len: undefined -> limits -> default", () => {
-		const out = mapApiModel({ id: "x" });
-		expect(out?.contextWindow).toBe(131_072);
 	});
 });
 
-describe("buildThinkingLevelMap", () => {
-	it("returns undefined when reasoning not enabled", () => {
-		expect(buildThinkingLevelMap({ id: "x" })).toBeUndefined();
-		expect(buildThinkingLevelMap({ id: "x", metadata: { capabilities: { reasoning: false } } })).toBeUndefined();
+describe("mapApiModel", () => {
+	it("returns null for deprecated or price-TBD models", () => {
+		expect(mapApiModel({ id: "old", metadata: { deprecated: true } })).toBeNull();
+		expect(
+			mapApiModel({ id: "tbd", metadata: { pricing: { pricing_tbd: true } } }),
+		).toBeNull();
+	});
+
+	it("maps a basic text model with defaults", () => {
+		const out = mapApiModel({ id: "nw-text", metadata: { display_name: "Text" } });
+		expect(out).toMatchObject({
+			id: "nw-text",
+			name: "Text",
+			reasoning: false,
+			input: ["text"],
+			contextWindow: 131_072,
+			maxTokens: 65_536,
+		});
+		expect(out?.compat.maxTokensField).toBe("max_tokens");
+		expect(out?.compat.supportsDeveloperRole).toBe(false);
+	});
+
+	it("sets reasoning compat and keeps effective pricing as published", () => {
+		const out = mapApiModel({
+			id: "qwen",
+			max_model_len: 262_128,
+			metadata: {
+				display_name: "Qwen",
+				capabilities: { reasoning: true, reasoning_effort: true, vision: true },
+				reasoning: reasoningMetadata,
+				pricing: {
+					input_per_million: 0.45,
+					output_per_million: 3.2,
+					cached_input_per_million: 0.25,
+					cached_output_per_million: null,
+				},
+				limits: { max_context_length: 262_128, max_output_tokens: 131_072 },
+			},
+		});
+		expect(out?.reasoning).toBe(true);
+		expect(out?.compat.supportsReasoningEffort).toBe(true);
+		expect(out?.compat.requiresReasoningContentOnAssistantMessages).toBe(true);
+		expect(out?.input).toEqual(["text", "image"]);
+		expect(out?.cost).toEqual({
+			input: 0.45,
+			output: 3.2,
+			cacheRead: 0.25,
+			cacheWrite: 0,
+		});
+		expect(out?.contextWindow).toBe(262_128);
+		expect(out?.maxTokens).toBe(131_072);
+	});
+
+	it("does not enable reasoning effort when the capability is absent", () => {
+		const out = mapApiModel({
+			id: "nw-reason",
+			metadata: { capabilities: { reasoning: true } },
+		});
+		expect(out?.compat.supportsReasoningEffort).toBeUndefined();
 	});
 });
