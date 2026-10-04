@@ -101,7 +101,15 @@ describe("buildThinkingLevelMap", () => {
 				id: "old-effort",
 				metadata: { capabilities: { reasoning: true, reasoning_effort: true } },
 			}),
-		).toEqual({ off: "none", high: "high", xhigh: "max" });
+		).toEqual({
+			off: "none",
+			minimal: null,
+			low: null,
+			medium: null,
+			high: "high",
+			xhigh: null,
+			max: "max",
+		});
 		expect(
 			buildThinkingLevelMap({
 				id: "old-no-effort",
