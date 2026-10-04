@@ -2,7 +2,7 @@
 
 Guidance for coding agents working in this repo.
 
-`@burnto/pi-neuralwatt` is a pi extension that registers the Neuralwatt provider, taps the provider's SSE energy and cost metadata, and writes the charged cost into pi's footer.
+`@burnto/pi-neuralwatt` is a pi extension that registers the Neuralwatt provider, taps the provider's SSE energy and cost metadata, and writes the reported request cost into pi's footer.
 
 ## Documentation
 

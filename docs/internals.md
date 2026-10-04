@@ -4,9 +4,9 @@ How the extension works and the invariants to preserve when changing it. User-fa
 
 ## Layout
 
-- `index.ts` — extension entry: provider registration, SSE tap, pi hooks, settings I/O, commands.
-- `lib.ts` — pure logic: catalog mapping, pricing, entry schema, totals, formatting, settings parsing.
-- `test/` — vitest unit tests, one file per module.
+- `index.ts` — extension entry: provider registration, SSE tap, pi hooks, catalog and quota discovery, settings I/O, commands.
+- `lib.ts` — pure logic: catalog mapping, reasoning mapping, telemetry schema and totals, formatting, presets, settings parsing, width helpers.
+- `test/` — vitest tests, one file per module.
 
 ## Provider registration
 
@@ -14,40 +14,84 @@ How the extension works and the invariants to preserve when changing it. User-fa
 
 Import the base provider with `getApiProvider` from `@earendil-works/pi-ai/compat`, not the package root. (An earlier port imported it from the root, where the named export does not resolve under pi's loader, so the stream wrapper never installed.)
 
-`/models` returns only the public catalog without a key; enrolled preview models appear only on authenticated requests. The response `scope` field (`public` or `customer`) records which catalog came back, so `authenticated` comes from `scope`, not from whether a key was sent. An authenticated cached catalog is never replaced by the smaller public one.
+If the base provider has no `streamSimple`, the provider is still registered but the SSE tap is not installed. `baseProviderAvailable` tracks this and a warning is surfaced once on a Neuralwatt session rather than silently presenting a fully functioning accounting extension.
+
+## Catalog discovery
+
+`/models` returns only the public catalog without a key; enrolled preview models appear only on authenticated requests. The response `scope` field (`public` or `customer`) records which catalog came back, so `authenticated` comes from `scope`, not from whether a key was sent.
+
+Cache-first policy:
+
+- The cache is validated on read (`parseCachedModels`). Corrupt entries are dropped instead of being cast into model configs.
+- If a usable cache exists, it is registered and any refresh runs without blocking startup. A first run or a cache-less state awaits a bounded refresh so headless `--model` resolution can still see the authenticated catalog.
+- A refresh that returns only the public catalog never replaces an authenticated catalog.
+- The cache stores a SHA-256 fingerprint of the credential used to fetch an authenticated catalog. On load, a fingerprint mismatch discards the private catalog rather than retaining another account's models. Raw keys are never stored.
+
+Pre-session startup key resolution reads `NEURALWATT_API_KEY`, then a plain `api_key` in `auth.json`, and rejects `$`-templated values so an unresolved shell/env expression is never sent as a bearer token. The session-start refresh uses the registry-resolved key.
 
 ## SSE tap
 
 The response body is tee'd per request through the stream options' `fetch`. Comment lines are parsed for `energy` and `cost` payloads, and the completion id is read from the `data:` lines. There is no global fetch patching, so concurrent requests from other providers or sessions are unaffected.
 
-## Cost resolution
+## Capture lifetime
 
-1. `request_cost_usd` from the `: cost` comment, used when it is a finite non-negative number.
-2. `energy_kwh × rate` for energy accounts when the comment is missing.
+Each request finalizes its metadata capture when the SDK branch ends: it joins the capture promise for at most 300 ms, then aborts the tee reader so no branch keeps draining. The completed `{ energy, cost, responseId }` is pushed to a bounded list (16 records, 60 s TTL) and matched in `message_end` by `responseId` only. `message_end` does not wait again.
 
-See the [glossary](glossary.md) for these terms.
+Invariants:
+
+- A capture without a response id never pairs with a message without one; interleaved cache-warmer traffic cannot be consumed by the next real response.
+- A successfully generated answer is never turned into a provider failure by capture trouble. Capture errors notify once per session and record missing telemetry.
+- `message_end` returns immediately for non-assistant and non-Neuralwatt messages, so unrelated providers never incur the metadata wait or a cost patch.
+- Each capture is consumed exactly once; a second `message_end` for the same id records missing telemetry, not a duplicate.
+
+## Telemetry and totals
+
+New records use `schemaVersion: 2` / `kind: "response-telemetry"` with independent `energy` and `cost` readings. Legacy `kind: "response-energy"` records migrate in memory (`toResponseTelemetry`) without rewriting session files. `totalsFromEntries` and `lastTelemetryFromEntries` handle both generations.
+
+Energy and cost coverage are tracked independently. Missing values are never summed as zeroes. Request-cost patching prefers a reported cost for any billing method; a fallback estimate is only produced for a confirmed `energy` account, and token/unknown accounts keep pi's token-price estimate.
 
 ## Hooks and matching
 
-`message_end` matches the captured record to the finished message by `responseId`. Totals rebuild from the active branch on `session_start` and in the `/neuralwatt:cost` command.
+- `session_start` — rebuild from the branch, detect a credential change, refresh models if the catalog is stale or unauthenticated, refresh quota for Neuralwatt, set status.
+- `session_tree` — rebuild from the branch. `/tree` emits this without `session_start`; missing it left abandoned-branch energy in the totals.
+- `model_select` / `before_provider_request` — keep quota warm; `model_select` re-renders the status area.
+- `message_end` — match capture, build telemetry, append, set status, optionally patch cost.
+- `session_shutdown` — clear the status area and pending captures.
 
-## Invariants
+## Settings
 
-- Cost replacement happens in place before pi persists the message. Pi sums `usage.cost.total` for the footer, so the patched total is what the user sees.
-- Totals follow the active branch, never the whole session file.
-- Captured records are matched by `responseId`. Cache-warm requests must not be counted against a real response.
-- An energy entry requires a positive `energy_kwh`; token accounts never produce entries.
-- Settings writes are best-effort. The in-memory `settings` object is shared by the menu, renderer, and status closures, so it updates immediately even if the file write fails.
+Settings live in `~/.pi/agent/neuralwatt.json` as `settingsVersion: 2`. Parsing never throws, uses own-property reads, ignores prototype-chain keys, and drops invalid presets and unknown equivalents. Legacy `energyStatus: "off"` migrates to `energyUiEnabled: false` with `energyStatus: "session"`; the obsolete `doomscroll` equivalent is dropped without substituting another preset.
+
+Writes are best-effort. A failed write keeps the change in memory and surfaces a warning rather than silently succeeding.
+
+## Status area and theme
+
+`ui.setStatus` takes a plain string and Pi has no theme-change event, so the status text is recolored on each session/model/response/toggle event. Between a theme change and the next event, the last rendered color is stale. Replacing the footer or calling `setTheme` as an invalidation hack is intentionally not done.
+
+Per-response transcript annotations respect the renderer width via a grapheme-aware `truncateVisible` in `lib.ts`. Pi's width helpers live in its nested `pi-tui` dependency; implementing a small equivalent avoids a new dependency while still counting wide and emoji graphemes as two cells.
+
+## Historical visibility
+
+Pi 1.0.0 has no public API to rebuild existing transcript entries. Turning the master switch off or on changes the status area and equivalents immediately and governs newly rendered annotations. Existing annotations change on `/reload` or a natural transcript rebuild; the toggle command and shortcut disclose this rather than reloading the session. Tree decoration is out of scope because the label API affects user-owned labels.
+
+## Shortcuts
+
+`registerShortcut` registrations are collected at load; there is no unregister API and extension shortcuts cannot be remapped through `keybindings.json`. `toggleShortcut` is validated with `isValidKeyId` and registered once. Changing or disabling it requires `/reload` or restart. `ctrl+shift+e` needs Kitty keyboard protocol or modifyOtherKeys; legacy terminals may send the same bytes as Ctrl+E, so it does not fire there. Syntax validation does not establish terminal support.
 
 ## Gotchas
 
 - npm's `min-release-age` can block `@earendil-works/pi-ai@^1.0.0` on a fresh install. Use `npm install --min-release-age=0`. The lockfile is committed, so CI uses `npm ci`.
 - Two copies of this extension loaded in one pi process fight over provider registration. Test from source with `-ne` so an installed copy does not win.
 
+## Deferred
+
+- Immediate, gap-free toggling of existing transcript annotations awaits a public Pi refresh mechanism.
+- Tree decorations await a public decoration API.
+- An allowance meter is not implemented; `/quota` `kwh_used` / `kwh_included` / `kwh_remaining` are account-wide charged-kWh snapshots, distinct from branch-local consumed energy.
+
 ## Open work
 
 Maintained list; remove items as they land.
 
 - Publish to npm (`npm publish --access public`) and verify the pi gallery listing.
-- Decide whether `perResponseLine` should default on.
 - Add a gallery preview image if it helps the package page.
