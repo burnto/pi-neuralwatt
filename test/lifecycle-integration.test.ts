@@ -12,7 +12,7 @@ import {
 	registerApiProvider,
 	unregisterApiProviders,
 } from "@earendil-works/pi-ai/compat";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type {
 	ExtensionAPI,
 	ExtensionContext,
@@ -49,6 +49,8 @@ afterEach(() => {
 
 const BASE_URL = "https://api.neuralwatt.com/v1";
 const encoder = new TextEncoder();
+// Must match RECORD_WAIT_MS in index.ts: the metadata join bound.
+const RECORD_WAIT_MS = 300;
 
 function delay(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
@@ -75,6 +77,7 @@ interface SseOptions {
 	costUsd?: number;
 	/** Delay the metadata comment, simulating a tail that follows `[DONE]`. */
 	metadataDelayMs?: number;
+	/** End the body after `[DONE]` with no metadata tail. */
 	omitMetadata?: boolean;
 	/** Error the metadata tee branch instead of closing it. */
 	failMetadata?: boolean;
@@ -97,22 +100,29 @@ function sseBody(options: SseOptions): ReadableStream<Uint8Array> {
 			}
 			if (step === 1) {
 				step = 2;
-				if (options.omitMetadata) return;
 				if (options.metadataDelayMs) await delay(options.metadataDelayMs);
 				if (options.failMetadata) {
 					controller.error(new Error("metadata branch failed"));
 					return;
 				}
 				const lines: string[] = [];
-				if (options.energyKwh !== undefined) {
-					lines.push(`: energy {"energy_kwh": ${options.energyKwh}}`);
+				if (!options.omitMetadata) {
+					if (options.energyKwh !== undefined) {
+						lines.push(`: energy {"energy_kwh": ${options.energyKwh}}`);
+					}
+					if (options.costUsd !== undefined) {
+						lines.push(`: cost {"request_cost_usd": ${options.costUsd}}`);
+					}
 				}
-				if (options.costUsd !== undefined) {
-					lines.push(`: cost {"request_cost_usd": ${options.costUsd}}`);
-				}
+				// A body always ends after its final chunk. Enqueue and close in the
+				// same pull rather than returning a no-op pull whose re-invocation
+				// differs across runtimes (Node 22/24 never re-pull a filling tee
+				// branch, so the body never closed and the metadata join ran to its
+				// 300 ms timeout).
 				if (lines.length > 0) {
 					controller.enqueue(encoder.encode(`${lines.join("\n")}\n`));
 				}
+				controller.close();
 				return;
 			}
 			controller.close();
@@ -408,12 +418,36 @@ describe("capture lifecycle", () => {
 		const harness = await createHarness();
 		await startSession(harness);
 
-		const { events, patch, elapsedMs } = await runResponse(harness, { responseId: "resp-empty", omitMetadata: true });
+		// The body ends after [DONE] with no metadata tail, so capture completes
+		// with the stream. Under fake timers the join's 300 ms fallback never
+		// fires, so the terminal event must arrive from completed-capture alone.
+		// If finalization waited on the timeout, this test would fail rather
+		// than merely run slowly.
+		vi.useFakeTimers();
+		try {
+			const response = runResponse(harness, {
+				responseId: "resp-empty",
+				omitMetadata: true,
+			});
+			await vi.advanceTimersByTimeAsync(0);
+			let settled = false;
+			void response.then(
+				() => {
+					settled = true;
+				},
+				() => {
+					settled = true;
+				},
+			);
+			for (let i = 0; i < 10 && !settled; i++) await Promise.resolve();
+			expect(settled).toBe(true);
 
-		expect(events).toContain("done");
-		// Capture is already complete, so this finishes immediately.
-		expect(elapsedMs).toBeLessThan(100);
-		expect(patch).toBeUndefined();
+			const { events, patch } = await response;
+			expect(events).toContain("done");
+			expect(patch).toBeUndefined();
+		} finally {
+			vi.useRealTimers();
+		}
 		const telemetry = entriesOf(harness)[0];
 		expect(telemetry.energy).toMatchObject({ status: "missing" });
 		expect(telemetry.cost).toMatchObject({ status: "missing" });
@@ -423,14 +457,25 @@ describe("capture lifecycle", () => {
 		const harness = await createHarness();
 		await startSession(harness);
 
-		const { events, elapsedMs } = await runResponse(harness, {
-			responseId: "resp-slow",
-			energyKwh: 0.9,
-			metadataDelayMs: 600,
-		});
-
-		expect(events).toContain("done");
-		expect(elapsedMs).toBeLessThan(450);
+		// The metadata tail is delayed well past the bound. With fake timers the
+		// only thing that can release the terminal event is the join's fallback,
+		// so advancing exactly the bound proves the wait is capped there without
+		// asserting a wall-clock duration.
+		vi.useFakeTimers();
+		try {
+			const response = runResponse(harness, {
+				responseId: "resp-slow",
+				energyKwh: 0.9,
+				metadataDelayMs: 600,
+			});
+			// Let the request reach the join so its fallback timer is armed.
+			await vi.advanceTimersByTimeAsync(0);
+			await vi.advanceTimersByTimeAsync(RECORD_WAIT_MS);
+			const { events } = await response;
+			expect(events).toContain("done");
+		} finally {
+			vi.useRealTimers();
+		}
 		expect(entriesOf(harness)[0].energy).toMatchObject({ status: "missing" });
 	});
 
