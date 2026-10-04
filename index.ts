@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
+	type AssistantMessageEvent,
 	type AssistantMessageEventStream,
 	type Context,
 	createAssistantMessageEventStream,
@@ -414,16 +415,38 @@ async function joinMetadata(
 	}
 }
 
+function isTerminalStreamEvent(event: AssistantMessageEvent): boolean {
+	return event.type === "done" || event.type === "error";
+}
+
+/*
+ * Forwards the provider stream to pi unchanged, except that the terminal
+ * `done`/`error` event is held until metadata capture has been joined. Pi emits
+ * `message_end` as soon as it consumes that terminal event, and `message_end`
+ * must be able to match the already-completed capture by response id. Without
+ * this ordering, a late `: energy`/`: cost` tail races the terminal event and
+ * the response is recorded as missing telemetry. Capture is finalized exactly
+ * once; a stream that ends or throws without a terminal event still finalizes.
+ */
 function forwardStream(
 	stream: AssistantMessageEventStream,
 	outer: AssistantMessageEventStream,
 	finalize: () => Promise<void>,
 ): void {
 	void (async () => {
-		try {
-			for await (const event of stream) outer.push(event);
-		} finally {
+		let finalized = false;
+		const runFinalize = async (): Promise<void> => {
+			if (finalized) return;
+			finalized = true;
 			await finalize().catch(() => undefined);
+		};
+		try {
+			for await (const event of stream) {
+				if (isTerminalStreamEvent(event)) await runFinalize();
+				outer.push(event);
+			}
+		} finally {
+			await runFinalize();
 			try {
 				outer.end();
 			} catch {
@@ -534,6 +557,9 @@ export default async function (pi: ExtensionAPI) {
 	let captureErrorNotified = false;
 
 	const captures: CapturedRecord[] = [];
+	/* Response ids already recorded on this branch, so a repeated message_end
+	 * cannot append a duplicate (including a spurious missing-telemetry entry). */
+	const recordedResponseIds = new Set<string>();
 	const pushCapture = (
 		record: StreamEnergyRecord,
 		responseId: string | undefined,
@@ -680,6 +706,18 @@ export default async function (pi: ExtensionAPI) {
 		const branch = ctx.sessionManager.getBranch();
 		totals = totalsFromEntries(branch);
 		lastTelemetry = lastTelemetryFromEntries(branch);
+		recordedResponseIds.clear();
+		for (const entry of branch) {
+			if (
+				entry.type !== "custom" ||
+				entry.customType !== ENERGY_COST_ENTRY_TYPE ||
+				!isEnergyCostData(entry.data)
+			) {
+				continue;
+			}
+			const responseId = toResponseTelemetry(entry.data).responseId;
+			if (responseId) recordedResponseIds.add(responseId);
+		}
 	};
 
 	const saveAndRefresh = async (ctx: ExtensionContext): Promise<void> => {
@@ -831,6 +869,11 @@ export default async function (pi: ExtensionAPI) {
 		if (message.role !== "assistant") return;
 		if (message.provider !== "neuralwatt") return;
 		if (message.stopReason === "error" || message.stopReason === "aborted") return;
+		/* A completed response is recorded once. A repeated message_end for an
+		 * already-recorded response id (retry/duplicate delivery) is ignored. */
+		if (message.responseId && recordedResponseIds.has(message.responseId)) {
+			return undefined;
+		}
 		currentCtx = ctx;
 
 		const now = Date.now();
@@ -846,6 +889,7 @@ export default async function (pi: ExtensionAPI) {
 		});
 		totals = addTelemetryToTotals(totals, telemetry);
 		lastTelemetry = telemetry;
+		if (message.responseId) recordedResponseIds.add(message.responseId);
 		try {
 			pi.appendEntry(ENERGY_COST_ENTRY_TYPE, telemetry);
 		} catch {
@@ -867,6 +911,7 @@ export default async function (pi: ExtensionAPI) {
 		clearStatus();
 		currentCtx = undefined;
 		captures.length = 0;
+		recordedResponseIds.clear();
 	});
 
 	/* ------------------------- shortcut ------------------------------ */

@@ -44,14 +44,14 @@ The response body is tee'd per request through the stream options' `fetch`. Comm
 
 ## Capture lifetime
 
-Each request finalizes its metadata capture when the SDK branch ends: it joins the capture promise for at most 300 ms, then aborts the tee reader so no branch keeps draining. The completed `{ energy, cost, responseId }` is pushed to a bounded list (16 records, 60 s TTL) and matched in `message_end` by `responseId` only. `message_end` does not wait again.
+Each request joins its metadata capture promise for at most 300 ms, then aborts the tee reader so no branch keeps draining. The join runs before the terminal `done`/`error` event is forwarded to pi, because pi emits `message_end` as soon as it consumes that event and `message_end` must be able to match the completed capture. The completed `{ energy, cost, responseId }` is pushed to a bounded list (16 records, 60 s TTL) and matched in `message_end` by `responseId` only. `message_end` does not wait again. A stream that ends or throws without a terminal event still finalizes, and finalization runs exactly once.
 
 Invariants:
 
 - A capture without a response id never pairs with a message without one; interleaved cache-warmer traffic cannot be consumed by the next real response.
 - A successfully generated answer is never turned into a provider failure by capture trouble. Capture errors notify once per session and record missing telemetry.
 - `message_end` returns immediately for non-assistant and non-Neuralwatt messages, so unrelated providers never incur the metadata wait or a cost patch.
-- Each capture is consumed exactly once; a second `message_end` for the same id records missing telemetry, not a duplicate.
+- Each capture is consumed exactly once; a second `message_end` for an already-recorded response id is ignored, so a completed response is never recorded twice.
 
 ## Telemetry and totals
 

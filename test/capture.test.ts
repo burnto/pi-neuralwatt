@@ -2,9 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
 	MAX_PENDING_RECORDS,
 	type CapturedRecord,
-	addTelemetryToTotals,
-	buildTelemetry,
-	emptyTotals,
 	pruneCaptures,
 	takeCaptureIndex,
 } from "../lib.ts";
@@ -63,60 +60,7 @@ describe("pruneCaptures", () => {
 });
 
 /*
- * Boundary-level simulation of the message_end path: interleaved captures are
- * matched by response id, consumed exactly once, and turned into telemetry.
- * This catches cross-assignment and double-recording without a live Pi.
+ * The message_end integration path (matching, once-only consumption, telemetry
+ * persistence, and cross-provider isolation) is covered end-to-end against the
+ * real extension in test/lifecycle-integration.test.ts.
  */
-describe("message_end matching (simulated)", () => {
-	it("attributes each response to its own capture and records once", () => {
-		const captures = [
-			capture("warm-1", 9),
-			capture("resp-1", 0.1, 1000),
-			capture("warm-2", 9, 1001),
-			capture("resp-2", 0.2, 1002),
-		];
-		let totals = emptyTotals();
-		const recorded: string[] = [];
-
-		for (const responseId of ["resp-1", "resp-2"]) {
-			const index = takeCaptureIndex(captures, responseId, 2000);
-			const matched = index >= 0 ? captures.splice(index, 1)[0] : undefined;
-			const telemetry = buildTelemetry(matched?.record ?? {}, {
-				modelId: "m",
-				responseId,
-				accountingMethod: "energy",
-				rateUsdPerKwh: 10,
-				recordedAt: "2026-01-01T00:00:00.000Z",
-			});
-			totals = addTelemetryToTotals(totals, telemetry);
-			recorded.push(responseId);
-		}
-
-		expect(recorded).toEqual(["resp-1", "resp-2"]);
-		expect(totals.responses).toBe(2);
-		expect(totals.energyKwh).toBeCloseTo(0.3, 10);
-		// The two warm captures were never consumed.
-		expect(captures.map((item) => item.responseId)).toEqual(["warm-1", "warm-2"]);
-	});
-
-	it("records missing telemetry when no capture exists", () => {
-		const captures: CapturedRecord[] = [];
-		const index = takeCaptureIndex(captures, "no-capture", 2000);
-		expect(index).toBe(-1);
-		const telemetry = buildTelemetry({}, {
-			modelId: "m",
-			responseId: "no-capture",
-			rateUsdPerKwh: 10,
-			recordedAt: "2026-01-01T00:00:00.000Z",
-		});
-		expect(telemetry.energy.status).toBe("missing");
-		expect(telemetry.cost.status).toBe("missing");
-	});
-
-	it("does not re-record a capture that was already consumed", () => {
-		const captures = [capture("resp-x", 0.1)];
-		expect(takeCaptureIndex(captures, "resp-x", 2000)).toBe(0);
-		captures.splice(0, 1);
-		expect(takeCaptureIndex(captures, "resp-x", 2000)).toBe(-1);
-	});
-});
