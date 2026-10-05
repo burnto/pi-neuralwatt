@@ -917,27 +917,62 @@ export function formatDurationSeconds(
 		: `${value}${unit} ${padded}${remainder.unit}`;
 }
 
-export interface EquivalentPreset {
+/** A comparison preset whose duration is a constant power draw. */
+export interface PowerPreset {
+	kind: "power";
 	id: string;
 	icon: string;
 	label: string;
 	watts: number;
 }
 
+/** A comparison preset that renders energy as a quantity in a literal unit. */
+export interface UnitPreset {
+	kind: "unit";
+	id: string;
+	icon: string;
+	label: string;
+	/** Quantity produced per kWh. */
+	perKwh: number;
+	/** Literal unit label, e.g. "calories", "J", "plastic bags". */
+	unit: string;
+}
+
+export type EquivalentPreset = PowerPreset | UnitPreset;
+
 /*
  * Default editable comparison presets. `brain` is approximate whole-brain
  * metabolic power (not electrical consumption); `led` is a defined 10 W
- * electrical load; `kettle` is the manufacturer-rated input while heating
- * (Comfee CKT003: 120V~ 60Hz, 1500W), not a measured boil cycle.
+ * electrical load; `calories` and `cookies` are food-energy (kcal) units at
+ * 860.42 kcal/kWh, with one cookie taken as 150 food Calories. Both are
+ * energy-equivalence comparisons, not claims about food eaten or about
+ * GPU-only energy.
  */
 export const DEFAULT_PRESETS: readonly EquivalentPreset[] = [
-	{ id: "brain", icon: "\u{1F9E0}", label: "Human brain", watts: 20 },
-	{ id: "led", icon: "\u{1F4A1}", label: "10 W LED bulb", watts: 10 },
-	{ id: "kettle", icon: "\u{1FAD6}", label: "1,500 W electric kettle", watts: 1500 },
+	{ kind: "power", id: "brain", icon: "\u{1F9E0}", label: "Human brain", watts: 20 },
+	{ kind: "power", id: "led", icon: "\u{1F4A1}", label: "10 W LED bulb", watts: 10 },
+	{
+		kind: "unit",
+		id: "calories",
+		icon: "\u{1F355}",
+		label: "Food calories",
+		perKwh: 860.42,
+		unit: "calories",
+	},
+	{
+		kind: "unit",
+		id: "cookies",
+		icon: "\u{1F36A}",
+		label: "Chocolate chip cookies",
+		perKwh: 860.42 / 150,
+		unit: "cookies",
+	},
 ];
 
 export const MAX_PRESET_WATTS = 10_000_000;
+export const MAX_PRESET_PER_KWH = 1_000_000_000_000;
 export const MAX_PRESET_LABEL_LENGTH = 48;
+export const MAX_PRESET_UNIT_LENGTH = 24;
 const MAX_PRESET_ICON_LENGTH = 8;
 
 /** Presentation fields must be single-line, control-free, and bounded. */
@@ -1026,22 +1061,79 @@ export function isValidPresetId(value: unknown): value is string {
 	);
 }
 
+/* Loose shape so an untrusted record can be inspected field by field before
+ * it is narrowed to the power or unit preset. */
+interface RawPreset {
+	kind?: unknown;
+	id?: unknown;
+	icon?: unknown;
+	label?: unknown;
+	watts?: unknown;
+	perKwh?: unknown;
+	unit?: unknown;
+}
+
 export function isValidEquivalentPreset(
 	value: unknown,
 ): value is EquivalentPreset {
 	if (!value || typeof value !== "object") return false;
-	const preset = value as Partial<EquivalentPreset>;
+	const preset = value as RawPreset;
 	if (!isValidPresetId(preset.id)) return false;
 	if (!isSafeDisplayString(preset.label, MAX_PRESET_LABEL_LENGTH)) return false;
-	if (!isSafeDisplayString(preset.icon, MAX_PRESET_ICON_LENGTH, { allowEmpty: true }))
-		return false;
 	if (
-		!isFinitePositiveNumber(preset.watts) ||
-		(preset.watts as number) > MAX_PRESET_WATTS
+		!isSafeDisplayString(preset.icon, MAX_PRESET_ICON_LENGTH, {
+			allowEmpty: true,
+		})
 	) {
 		return false;
 	}
-	return true;
+	if (preset.kind === "power") {
+		return (
+			isFinitePositiveNumber(preset.watts) && preset.watts <= MAX_PRESET_WATTS
+		);
+	}
+	if (preset.kind === "unit") {
+		return (
+			isFinitePositiveNumber(preset.perKwh) &&
+			preset.perKwh <= MAX_PRESET_PER_KWH &&
+			isSafeDisplayString(preset.unit, MAX_PRESET_UNIT_LENGTH)
+		);
+	}
+	return false;
+}
+
+/*
+ * Legacy v2 presets carried no `kind`; a preset with a usable `watts` is
+ * normalized to the power kind so an old catalog keeps working. The unit kind
+ * is never inferred from an absent `kind`: without it, a quantity-per-kWh
+ * preset is indistinguishable from an invalid one.
+ */
+function withNormalizedKind(record: RawPreset): RawPreset {
+	if (record.kind !== undefined) return record;
+	if (isFinitePositiveNumber(record.watts)) {
+		return { ...record, kind: "power" };
+	}
+	return record;
+}
+
+function copyPreset(preset: EquivalentPreset): EquivalentPreset {
+	if (preset.kind === "power") {
+		return {
+			kind: "power",
+			id: preset.id,
+			icon: preset.icon,
+			label: preset.label,
+			watts: preset.watts,
+		};
+	}
+	return {
+		kind: "unit",
+		id: preset.id,
+		icon: preset.icon,
+		label: preset.label,
+		perKwh: preset.perKwh,
+		unit: preset.unit,
+	};
 }
 
 /** Validates and de-duplicates a preset catalog by id, preserving order. */
@@ -1050,15 +1142,14 @@ export function sanitizePresets(value: unknown): EquivalentPreset[] | undefined 
 	const seen = new Set<string>();
 	const out: EquivalentPreset[] = [];
 	for (const item of value) {
-		if (!isValidEquivalentPreset(item)) continue;
-		if (seen.has(item.id)) continue;
-		seen.add(item.id);
-		out.push({
-			id: item.id,
-			icon: item.icon,
-			label: item.label,
-			watts: item.watts,
-		});
+		const normalized =
+			item && typeof item === "object"
+				? withNormalizedKind(item as RawPreset)
+				: item;
+		if (!isValidEquivalentPreset(normalized)) continue;
+		if (seen.has(normalized.id)) continue;
+		seen.add(normalized.id);
+		out.push(copyPreset(normalized));
 	}
 	return out;
 }
@@ -1080,26 +1171,67 @@ export function equivalentSeconds(
 	return (kwh * 3_600_000) / watts;
 }
 
+/** Quantity a `perKwh` rate produces from `kwh`. */
+export function equivalentQuantity(
+	kwh: number,
+	perKwh: number,
+): number | undefined {
+	if (!isFiniteNonNegativeNumber(kwh) || !isFinitePositiveNumber(perKwh))
+		return undefined;
+	return kwh * perKwh;
+}
+
+/*
+ * Magnitude-based rendering for a unit quantity, with no thousands separators:
+ * >=1000 rounds to an integer, >=10 shows one decimal, and the rest show two.
+ * Exactly zero renders as "0" so an enabled preset reads "0 calories" rather
+ * than "0.00 calories".
+ */
+export function formatPresetQuantity(quantity: number): string | undefined {
+	if (!Number.isFinite(quantity) || quantity < 0) return undefined;
+	if (quantity === 0) return "0";
+	if (quantity >= 1000) return String(Math.round(quantity));
+	if (quantity >= 10) return quantity.toFixed(1);
+	return quantity.toFixed(2);
+}
+
+/** Compact and detail bodies before the optional icon prefix. */
+function equivalentBodies(
+	kwh: number,
+	preset: EquivalentPreset,
+): { compact: string; detail: string } | undefined {
+	if (preset.kind === "power") {
+		const seconds = equivalentSeconds(kwh, preset.watts);
+		if (seconds === undefined) return undefined;
+		return {
+			compact: formatDurationSeconds(seconds, "compact"),
+			detail: `${formatDurationSeconds(seconds, "spaced")} ${preset.label}`,
+		};
+	}
+	const quantity = equivalentQuantity(kwh, preset.perKwh);
+	if (quantity === undefined) return undefined;
+	const value = formatPresetQuantity(quantity);
+	if (value === undefined) return undefined;
+	const amount = `${value} ${preset.unit}`;
+	return { compact: amount, detail: `${amount} ${preset.label}` };
+}
+
 export function formatEquivalent(
 	kwh: number,
 	preset: EquivalentPreset,
 ): string | undefined {
-	const seconds = equivalentSeconds(kwh, preset.watts);
-	if (seconds === undefined) return undefined;
-	const duration = formatDurationSeconds(seconds, "compact");
-	return preset.icon ? `${preset.icon} ${duration}` : duration;
+	const bodies = equivalentBodies(kwh, preset);
+	if (!bodies) return undefined;
+	return preset.icon ? `${preset.icon} ${bodies.compact}` : bodies.compact;
 }
 
 export function formatEquivalentDetail(
 	kwh: number,
 	preset: EquivalentPreset,
 ): string | undefined {
-	const seconds = equivalentSeconds(kwh, preset.watts);
-	if (seconds === undefined) return undefined;
-	const duration = formatDurationSeconds(seconds, "spaced");
-	return preset.icon
-		? `${preset.icon} ${duration} ${preset.label}`
-		: `${duration} ${preset.label}`;
+	const bodies = equivalentBodies(kwh, preset);
+	if (!bodies) return undefined;
+	return preset.icon ? `${preset.icon} ${bodies.detail}` : bodies.detail;
 }
 
 export type EnergyStatusMode = "session" | "last" | "both";
@@ -1117,7 +1249,7 @@ export const THEME_COLORS = [
 export type ThemeColorName = (typeof THEME_COLORS)[number];
 
 export interface NeuralwattSettings {
-	settingsVersion: 2;
+	settingsVersion: 3;
 	/** Master switch for extension-owned automatic energy UI. */
 	energyUiEnabled: boolean;
 	energyStatus: EnergyStatusMode;
@@ -1134,7 +1266,7 @@ export interface NeuralwattSettings {
 }
 
 export const DEFAULT_SETTINGS: NeuralwattSettings = {
-	settingsVersion: 2,
+	settingsVersion: 3,
 	energyUiEnabled: true,
 	energyStatus: "session",
 	energyColor: "dim",

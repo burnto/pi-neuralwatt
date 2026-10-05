@@ -2,28 +2,42 @@ import { describe, expect, it } from "vitest";
 import {
 	DEFAULT_PRESETS,
 	DEFAULT_SETTINGS,
-	type EquivalentPreset,
-	type ResponseTelemetry,
-	type Totals,
 	emptyTotals,
-	findPreset,
+	equivalentQuantity,
 	formatDurationSeconds,
 	formatEquivalent,
 	formatEquivalentDetail,
 	formatJoules,
+	formatPresetQuantity,
 	formatStatusText,
 	formatUsd,
 	formatWh,
 	equivalentSeconds,
+	findPreset,
+	type PowerPreset,
+	type ResponseTelemetry,
+	type Totals,
+	type UnitPreset,
 	truncateVisible,
 	visibleWidth,
 } from "../lib.ts";
 
-const preset = (overrides: Partial<EquivalentPreset> = {}): EquivalentPreset => ({
+const powerPreset = (overrides: Partial<PowerPreset> = {}): PowerPreset => ({
+	kind: "power",
 	id: "test",
 	icon: "\u{1F50C}",
 	label: "Test load",
 	watts: 10,
+	...overrides,
+});
+
+const unitPreset = (overrides: Partial<UnitPreset> = {}): UnitPreset => ({
+	kind: "unit",
+	id: "test",
+	icon: "",
+	label: "Test quantity",
+	perKwh: 10,
+	unit: "widgets",
 	...overrides,
 });
 
@@ -93,29 +107,92 @@ describe("equivalentSeconds", () => {
 	});
 });
 
+describe("formatPresetQuantity / equivalentQuantity", () => {
+	it("uses magnitude bands without thousands separators", () => {
+		expect(formatPresetQuantity(3376.8)).toBe("3377");
+		expect(formatPresetQuantity(1000)).toBe("1000");
+		expect(formatPresetQuantity(37.52)).toBe("37.5");
+		expect(formatPresetQuantity(10)).toBe("10.0");
+		expect(formatPresetQuantity(0.807)).toBe("0.81");
+		expect(formatPresetQuantity(0.00938)).toBe("0.01");
+	});
+	it('renders exactly zero as "0"', () => {
+		expect(formatPresetQuantity(0)).toBe("0");
+	});
+	it("returns undefined for negative or non-finite quantities", () => {
+		expect(formatPresetQuantity(-1)).toBeUndefined();
+		expect(formatPresetQuantity(Number.NaN)).toBeUndefined();
+		expect(formatPresetQuantity(Number.POSITIVE_INFINITY)).toBeUndefined();
+	});
+	it("computes quantity from energy and rate", () => {
+		expect(equivalentQuantity(0.000938, 860.42)).toBeCloseTo(0.8071, 4);
+		expect(equivalentQuantity(-1, 10)).toBeUndefined();
+		expect(equivalentQuantity(0.001, 0)).toBeUndefined();
+	});
+});
+
 describe("formatEquivalent / formatEquivalentDetail", () => {
-	it("matches the documented defaults at 1 Wh", () => {
+	it("matches the power defaults at 1 Wh", () => {
 		expect(formatEquivalent(0.001, findPreset(DEFAULT_PRESETS, "brain")!)).toBe(
 			"\u{1F9E0} 3m",
 		);
 		expect(formatEquivalent(0.001, findPreset(DEFAULT_PRESETS, "led")!)).toBe(
 			"\u{1F4A1} 6m",
 		);
-		expect(formatEquivalent(0.001, findPreset(DEFAULT_PRESETS, "kettle")!)).toBe(
-			"\u{1FAD6} 2s",
-		);
 	});
-	it("spells out the activity", () => {
+	it("renders a unit preset's quantity with its literal unit", () => {
+		expect(
+			formatEquivalent(0.001, findPreset(DEFAULT_PRESETS, "calories")!),
+		).toBe("\u{1F355} 0.86 calories");
+		expect(
+			formatEquivalentDetail(0.001, findPreset(DEFAULT_PRESETS, "calories")!),
+		).toBe("\u{1F355} 0.86 calories Food calories");
+	});
+	it("renders the built-in cookies preset at representative energies", () => {
+		const cookies = findPreset(DEFAULT_PRESETS, "cookies")!;
+		expect(formatEquivalent(1, cookies)).toBe("\u{1F36A} 5.74 cookies");
+		expect(formatEquivalent(0, cookies)).toBe("\u{1F36A} 0 cookies");
+		expect(formatEquivalent(0.000938, cookies)).toBe("\u{1F36A} 0.01 cookies");
+	});
+	it("spells out a power preset's activity", () => {
 		expect(formatEquivalentDetail(0.001, findPreset(DEFAULT_PRESETS, "brain")!)).toBe(
 			"\u{1F9E0} 3m Human brain",
 		);
 	});
-	it("returns undefined for invalid energy or power", () => {
-		expect(formatEquivalent(-1, preset())).toBeUndefined();
-		expect(formatEquivalent(0.001, preset({ watts: -1 }))).toBeUndefined();
+	it("formats unit quantities by magnitude", () => {
+		// 0.938 Wh = 0.000938 kWh.
+		expect(
+			formatEquivalent(0.000938, unitPreset({ perKwh: 3_600_000, unit: "J" })),
+		).toBe("3377 J");
+		expect(
+			formatEquivalent(0.000938, unitPreset({ perKwh: 40_300, unit: "ft" })),
+		).toBe("37.8 ft");
+		expect(
+			formatEquivalent(0.000938, unitPreset({ perKwh: 860.42, unit: "calories" })),
+		).toBe("0.81 calories");
+		expect(
+			formatEquivalent(0.000938, unitPreset({ perKwh: 10, unit: "plastic bags" })),
+		).toBe("0.01 plastic bags");
+	});
+	it('renders a zero unit quantity as "0" with its unit', () => {
+		expect(formatEquivalent(0, unitPreset({ unit: "calories" }))).toBe(
+			"0 calories",
+		);
+	});
+	it("returns undefined for invalid energy, power, or rate", () => {
+		expect(formatEquivalent(-1, powerPreset())).toBeUndefined();
+		expect(formatEquivalent(0.001, powerPreset({ watts: -1 }))).toBeUndefined();
+		expect(formatEquivalent(-1, unitPreset())).toBeUndefined();
+		expect(formatEquivalent(0.001, unitPreset({ perKwh: -1 }))).toBeUndefined();
+		expect(
+			formatEquivalent(0.001, unitPreset({ perKwh: Number.POSITIVE_INFINITY })),
+		).toBeUndefined();
 	});
 	it("omits an empty icon without leaving a leading space", () => {
-		expect(formatEquivalent(0.001, preset({ icon: "" }))).toBe("6m");
+		expect(formatEquivalent(0.001, powerPreset({ icon: "" }))).toBe("6m");
+		expect(formatEquivalent(0.001, unitPreset({ perKwh: 1000 }))).toBe(
+			"1.00 widgets",
+		);
 	});
 });
 
@@ -235,6 +312,21 @@ describe("formatStatusText", () => {
 				equivalents: ["led"],
 			}),
 		).toBe("\u26A1\uFE0F 1.00 Wh \u00B7 \u{1F4A1} 6m");
+	});
+
+	it("renders an enabled unit equivalent", () => {
+		expect(
+			formatStatusText(totals, last, {
+				...DEFAULT_SETTINGS,
+				equivalents: ["calories"],
+			}),
+		).toBe("\u26A1\uFE0F 1.00 Wh \u00B7 \u{1F355} 0.86 calories");
+		expect(
+			formatStatusText(emptyTotals(), undefined, {
+				...DEFAULT_SETTINGS,
+				equivalents: ["calories"],
+			}),
+		).toBe("\u26A1\uFE0F 0 Wh \u00B7 \u{1F355} 0 calories");
 	});
 
 	it("ignores enabled ids with no matching preset", () => {

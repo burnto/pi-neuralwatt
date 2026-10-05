@@ -1,4 +1,5 @@
 import { mkdtempSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -228,8 +229,21 @@ interface Harness {
 	ctx: ExtensionContext;
 }
 
+interface UiScript {
+	select?: (
+		title: string,
+		options: string[],
+	) => string | undefined | Promise<string | undefined>;
+	input?: (
+		title: string,
+		placeholder?: string,
+	) => string | undefined | Promise<string | undefined>;
+	confirm?: (title: string, message: string) => boolean | Promise<boolean>;
+}
+
 async function createHarness(
 	terminal: "done" | "error" = "done",
+	script: UiScript = {},
 ): Promise<Harness> {
 	const handlers = new Map<string, (event: unknown, ctx: ExtensionContext) => unknown>();
 	const providers: Harness["providers"] = [];
@@ -270,9 +284,12 @@ async function createHarness(
 			notifications.push({ message, type });
 		},
 		theme: { fg: (_color: string, text: string) => text },
-		select: async () => undefined,
-		confirm: async () => false,
-		input: async () => undefined,
+		select: async (title: string, options: string[]) =>
+			script.select ? await script.select(title, options) : undefined,
+		confirm: async (title: string, message: string) =>
+			script.confirm ? await script.confirm(title, message) : false,
+		input: async (title: string, placeholder?: string) =>
+			script.input ? await script.input(title, placeholder) : undefined,
 	};
 
 	const ctx = {
@@ -619,5 +636,93 @@ describe("energy-ui command", () => {
 		const usage = harness.notifications.at(-1)?.message ?? "";
 		expect(usage).toContain("neuralwatt:energy-ui");
 		expect(usage).not.toContain("neuralwatt:toggle");
+	});
+});
+
+interface SavedSettings {
+	equivalentPresets: Record<string, unknown>[];
+}
+
+async function readSavedSettings(): Promise<SavedSettings> {
+	const path = join(process.env.PI_CODING_AGENT_DIR ?? "", "neuralwatt.json");
+	try {
+		return JSON.parse(await readFile(path, "utf8")) as SavedSettings;
+	} catch {
+		return { equivalentPresets: [] };
+	}
+}
+
+function countingSelect(
+	menuFirst: string,
+	presetFirst: string,
+): (title: string) => string | undefined {
+	const counts = new Map<string, number>();
+	const bump = (title: string): number => {
+		const next = (counts.get(title) ?? 0) + 1;
+		counts.set(title, next);
+		return next;
+	};
+	return (title) => {
+		if (title === "Neuralwatt settings") {
+			return bump(title) === 1 ? menuFirst : "Done";
+		}
+		if (title === "Comparison presets") {
+			return bump(title) === 1 ? presetFirst : "Done";
+		}
+		if (title === "New preset kind") return "Unit (quantity per kWh)";
+		return undefined;
+	};
+}
+
+describe("preset editor UI", () => {
+	it("adds a unit preset with kind, factor, and unit label", async () => {
+		const script: UiScript = {
+			select: countingSelect("Comparison presets: 4", "Add preset"),
+			input: (title) => {
+				if (title.startsWith("New preset id")) return "bags";
+				if (title.startsWith("Preset label")) return "Plastic bags";
+				if (title.startsWith("Preset icon")) return "\u{1F6CD}\uFE0F";
+				if (title.startsWith("Quantity per kWh")) return "10";
+				if (title.startsWith("Unit label")) return "plastic bags";
+				return undefined;
+			},
+		};
+		const harness = await createHarness("done", script);
+		await startSession(harness);
+		await harness.commands.get("neuralwatt:settings")?.("", harness.ctx);
+
+		const saved = await readSavedSettings();
+		expect(saved.equivalentPresets).toContainEqual({
+			kind: "unit",
+			id: "bags",
+			icon: "\u{1F6CD}\uFE0F",
+			label: "Plastic bags",
+			perKwh: 10,
+			unit: "plastic bags",
+		});
+	});
+
+	it("rejects a non-positive unit factor before saving", async () => {
+		const script: UiScript = {
+			select: countingSelect("Comparison presets: 4", "Add preset"),
+			input: (title) => {
+				if (title.startsWith("New preset id")) return "bigbags";
+				if (title.startsWith("Preset label")) return "Big bags";
+				if (title.startsWith("Preset icon")) return "";
+				if (title.startsWith("Quantity per kWh")) return "0";
+				return undefined;
+			},
+		};
+		const harness = await createHarness("done", script);
+		await startSession(harness);
+		await harness.commands.get("neuralwatt:settings")?.("", harness.ctx);
+
+		const saved = await readSavedSettings();
+		expect(saved.equivalentPresets.some((preset) => preset.id === "bigbags")).toBe(
+			false,
+		);
+		expect(
+			harness.notifications.some((entry) => /invalid quantity/i.test(entry.message)),
+		).toBe(true);
 	});
 });

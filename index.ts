@@ -27,6 +27,8 @@ import {
 	type EnergyPayload,
 	type EquivalentPreset,
 	MAX_PRESET_LABEL_LENGTH,
+	MAX_PRESET_PER_KWH,
+	MAX_PRESET_UNIT_LENGTH,
 	MAX_PRESET_WATTS,
 	type NeuralwattModelConfig,
 	type NeuralwattSettings,
@@ -542,6 +544,21 @@ function isValidPresetWatts(value: number): boolean {
 	return isFinitePositiveNumber(value) && value <= MAX_PRESET_WATTS;
 }
 
+function isValidPresetPerKwh(value: number): boolean {
+	return isFinitePositiveNumber(value) && value <= MAX_PRESET_PER_KWH;
+}
+
+function isValidPresetUnit(value: string): boolean {
+	return isSafeDisplayString(value.trim(), MAX_PRESET_UNIT_LENGTH);
+}
+
+/** The kind-specific magnitude shown next to a preset's name. */
+function presetQuantityLabel(preset: EquivalentPreset): string {
+	return preset.kind === "power"
+		? `${preset.watts} W`
+		: `${preset.perKwh}/kWh ${preset.unit}`;
+}
+
 /* ------------------------------------------------------------------ */
 /* Extension                                                           */
 /* ------------------------------------------------------------------ */
@@ -955,7 +972,7 @@ export default async function (pi: ExtensionAPI) {
 			const presets = settings.equivalentPresets;
 			const labels = presets.map(
 				(preset) =>
-					`${settings.equivalents.includes(preset.id) ? "[x]" : "[ ]"} ${preset.icon} ${preset.label} (${preset.watts} W)`,
+					`${settings.equivalents.includes(preset.id) ? "[x]" : "[ ]"} ${preset.icon} ${preset.label} (${presetQuantityLabel(preset)})`,
 			);
 			const picked = await ctx.ui.select("Enabled equivalents (toggle)", [
 				...labels,
@@ -976,9 +993,16 @@ export default async function (pi: ExtensionAPI) {
 		DEFAULT_PRESETS.map((preset) => ({ ...preset }));
 
 	const presetSummary = (preset: EquivalentPreset): string =>
-		`${preset.icon} ${preset.label} \u00B7 ${preset.watts} W (${preset.id})`;
+		`${preset.icon} ${preset.label} \u00B7 ${presetQuantityLabel(preset)} (${preset.id})`;
 
 	const addPreset = async (ctx: ExtensionContext): Promise<void> => {
+		const kindChoice = await ctx.ui.select("New preset kind", [
+			"Power (watts)",
+			"Unit (quantity per kWh)",
+		]);
+		if (kindChoice !== "Power (watts)" && kindChoice !== "Unit (quantity per kWh)") {
+			return;
+		}
 		const id = await ctx.ui.input("New preset id (letters, digits, - or _)");
 		if (id === undefined) return;
 		const trimmedId = id.trim();
@@ -1002,17 +1026,61 @@ export default async function (pi: ExtensionAPI) {
 			ctx.ui.notify("Invalid icon: use a single, control-free line.", "warning");
 			return;
 		}
-		const wattsInput = await ctx.ui.input("Power in watts (constant draw)", "100");
-		if (wattsInput === undefined) return;
-		const watts = Number(wattsInput.trim());
-		if (!isValidPresetWatts(watts)) {
-			ctx.ui.notify("Invalid power: enter a positive number of watts.", "warning");
-			return;
+		if (kindChoice === "Power (watts)") {
+			const wattsInput = await ctx.ui.input("Power in watts (constant draw)", "100");
+			if (wattsInput === undefined) return;
+			const watts = Number(wattsInput.trim());
+			if (!isValidPresetWatts(watts)) {
+				ctx.ui.notify(
+					"Invalid power: enter a positive number of watts.",
+					"warning",
+				);
+				return;
+			}
+			settings.equivalentPresets = [
+				...settings.equivalentPresets,
+				{
+					kind: "power",
+					id: trimmedId,
+					icon: icon.trim(),
+					label: label.trim(),
+					watts,
+				},
+			];
+		} else {
+			const perKwhInput = await ctx.ui.input("Quantity per kWh", "1");
+			if (perKwhInput === undefined) return;
+			const perKwh = Number(perKwhInput.trim());
+			if (!isValidPresetPerKwh(perKwh)) {
+				ctx.ui.notify(
+					"Invalid quantity: enter a positive number per kWh.",
+					"warning",
+				);
+				return;
+			}
+			const unit = await ctx.ui.input(
+				"Unit label (e.g. calories, J, plastic bags)",
+			);
+			if (unit === undefined) return;
+			if (!isValidPresetUnit(unit)) {
+				ctx.ui.notify(
+					"Invalid unit label: use a single, control-free line.",
+					"warning",
+				);
+				return;
+			}
+			settings.equivalentPresets = [
+				...settings.equivalentPresets,
+				{
+					kind: "unit",
+					id: trimmedId,
+					icon: icon.trim(),
+					label: label.trim(),
+					perKwh,
+					unit: unit.trim(),
+				},
+			];
 		}
-		settings.equivalentPresets = [
-			...settings.equivalentPresets,
-			{ id: trimmedId, icon: icon.trim(), label: label.trim(), watts },
-		];
 		await saveAndRefresh(ctx);
 	};
 
@@ -1020,13 +1088,18 @@ export default async function (pi: ExtensionAPI) {
 		ctx: ExtensionContext,
 		preset: EquivalentPreset,
 	): Promise<void> => {
-		const choice = await ctx.ui.select(`Edit ${preset.id}`, [
-			"Edit label",
-			"Edit icon",
-			"Edit watts",
-			"Remove preset",
-			"Back",
-		]);
+		const options =
+			preset.kind === "power"
+				? ["Edit label", "Edit icon", "Edit watts", "Remove preset", "Back"]
+				: [
+						"Edit label",
+						"Edit icon",
+						"Edit factor",
+						"Edit unit",
+						"Remove preset",
+						"Back",
+					];
+		const choice = await ctx.ui.select(`Edit ${preset.id}`, options);
 		if (!choice || choice === "Back") return;
 		if (choice === "Remove preset") {
 			const confirmed = await ctx.ui.confirm(
@@ -1043,7 +1116,7 @@ export default async function (pi: ExtensionAPI) {
 			await saveAndRefresh(ctx);
 			return;
 		}
-		const next = { ...preset };
+		let next: EquivalentPreset = preset;
 		if (choice === "Edit label") {
 			const input = await ctx.ui.input("Preset label", preset.label);
 			if (input === undefined) return;
@@ -1051,7 +1124,7 @@ export default async function (pi: ExtensionAPI) {
 				ctx.ui.notify("Invalid label.", "warning");
 				return;
 			}
-			next.label = input.trim();
+			next = { ...preset, label: input.trim() };
 		} else if (choice === "Edit icon") {
 			const input = await ctx.ui.input("Preset icon", preset.icon);
 			if (input === undefined) return;
@@ -1059,8 +1132,8 @@ export default async function (pi: ExtensionAPI) {
 				ctx.ui.notify("Invalid icon.", "warning");
 				return;
 			}
-			next.icon = input.trim();
-		} else if (choice === "Edit watts") {
+			next = { ...preset, icon: input.trim() };
+		} else if (choice === "Edit watts" && preset.kind === "power") {
 			const input = await ctx.ui.input("Power in watts", String(preset.watts));
 			if (input === undefined) return;
 			const watts = Number(input.trim());
@@ -1068,7 +1141,26 @@ export default async function (pi: ExtensionAPI) {
 				ctx.ui.notify("Invalid power.", "warning");
 				return;
 			}
-			next.watts = watts;
+			next = { ...preset, watts };
+		} else if (choice === "Edit factor" && preset.kind === "unit") {
+			const input = await ctx.ui.input("Quantity per kWh", String(preset.perKwh));
+			if (input === undefined) return;
+			const perKwh = Number(input.trim());
+			if (!isValidPresetPerKwh(perKwh)) {
+				ctx.ui.notify("Invalid quantity.", "warning");
+				return;
+			}
+			next = { ...preset, perKwh };
+		} else if (choice === "Edit unit" && preset.kind === "unit") {
+			const input = await ctx.ui.input("Unit label", preset.unit);
+			if (input === undefined) return;
+			if (!isValidPresetUnit(input)) {
+				ctx.ui.notify("Invalid unit label.", "warning");
+				return;
+			}
+			next = { ...preset, unit: input.trim() };
+		} else {
+			return;
 		}
 		settings.equivalentPresets = settings.equivalentPresets.map((candidate) =>
 			candidate.id === preset.id ? next : candidate,
