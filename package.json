@@ -1,6 +1,6 @@
 {
 	"name": "@burnto/pi-neuralwatt",
-	"version": "0.3.0",
+	"version": "0.3.1",
 	"type": "module",
 	"description": "Neuralwatt provider for pi. Shows the reported request cost in pi's footer and provider-reported session energy in the status area.",
 	"keywords": ["pi-package", "neuralwatt", "energy", "provider"],
@@ -10,7 +10,7 @@
 		"type": "git",
 		"url": "git+https://github.com/burnto/pi-neuralwatt.git"
 	},
-	"homepage": "https://github.com/burnto/pi-neuralwatt#readme",
+	"homepage": "https://github.com/burnto/pi-neuralwatt",
 	"bugs": "https://github.com/burnto/pi-neuralwatt/issues",
 	"files": ["index.ts", "lib.ts", "README.md", "CHANGELOG.md", "assets"],
 	"pi": {
