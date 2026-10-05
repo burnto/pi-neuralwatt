@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1
+
+- Point `homepage` at the repository instead of its `#readme` anchor.
+
 ## 0.3.0
 
 - Rename the visibility command from `/neuralwatt:toggle` to `/neuralwatt:energy-ui`. `on`, `off`, and the bare toggle behave as before, and no alias is registered.
