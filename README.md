@@ -2,6 +2,8 @@
 
 Neuralwatt model provider for pi. It reports the request cost Neuralwatt sends and, optionally, the provider-reported energy a session consumes.
 
+![The /neuralwatt:settings menu. Brain, LED bulb, food calorie, and cookie equivalents are switched on one by one and the status line grows to show each.](https://raw.githubusercontent.com/burnto/pi-neuralwatt/main/assets/equivalents.gif)
+
 ## What it does
 
 Neuralwatt sends per-response telemetry on its response stream: a reported request cost, and reported GPU energy where it is available. The extension records both as session entries that never enter model context, and can write the reported cost into the response's usage record so pi's footer shows what Neuralwatt reported rather than the token list price.

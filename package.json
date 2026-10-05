@@ -12,9 +12,10 @@
 	},
 	"homepage": "https://github.com/burnto/pi-neuralwatt#readme",
 	"bugs": "https://github.com/burnto/pi-neuralwatt/issues",
-	"files": ["index.ts", "lib.ts", "README.md"],
+	"files": ["index.ts", "lib.ts", "README.md", "assets"],
 	"pi": {
-		"extensions": ["./index.ts"]
+		"extensions": ["./index.ts"],
+		"image": "https://raw.githubusercontent.com/burnto/pi-neuralwatt/main/assets/equivalents.gif"
 	},
 	"scripts": {
 		"test": "vitest run",
