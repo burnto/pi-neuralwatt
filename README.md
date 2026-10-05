@@ -47,8 +47,8 @@ With the energy UI on and a Neuralwatt model active, the status area shows repor
 | Mode | Example |
 | --- | --- |
 | `session` (default) | `⚡️ 1.42 Wh` |
-| `both` | `⚡️ 1.42 Wh (+0.08 Wh)` |
-| `last` | `⚡️ 0.08 Wh` |
+| `both` | `⚡️ 1.42 Wh (+0.080 Wh)` |
+| `last` | `⚡️ 0.080 Wh` |
 
 Equivalents append to the indicator as an icon and a duration:
 
