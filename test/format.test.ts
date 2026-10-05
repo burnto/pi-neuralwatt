@@ -146,14 +146,38 @@ describe("formatStatusText", () => {
 		);
 	});
 
-	it("distinguishes no reported data from a reported zero", () => {
+	it("renders zero when no reading is reported", () => {
 		expect(formatStatusText(emptyTotals(), undefined, DEFAULT_SETTINGS)).toBe(
-			"\u26A1\uFE0F no data",
+			"\u26A1\uFE0F 0 Wh",
 		);
 		const zeroTotals = { ...emptyTotals(), responses: 1, energyReported: 1 };
 		expect(formatStatusText(zeroTotals, undefined, DEFAULT_SETTINGS)).toBe(
 			"\u26A1\uFE0F 0 Wh",
 		);
+	});
+
+	it("renders zero in last mode with no reading", () => {
+		expect(
+			formatStatusText(emptyTotals(), undefined, {
+				...DEFAULT_SETTINGS,
+				energyStatus: "last",
+			}),
+		).toBe("\u26A1\uFE0F 0 Wh");
+		expect(
+			formatStatusText(emptyTotals(), undefined, {
+				...DEFAULT_SETTINGS,
+				energyStatus: "both",
+			}),
+		).toBe("\u26A1\uFE0F 0 Wh");
+	});
+
+	it("renders enabled equivalents at zero", () => {
+		expect(
+			formatStatusText(emptyTotals(), undefined, {
+				...DEFAULT_SETTINGS,
+				equivalents: ["brain"],
+			}),
+		).toBe("\u26A1\uFE0F 0 Wh \u00B7 \u{1F9E0} 0s");
 	});
 
 	it("supports last and both modes", () => {

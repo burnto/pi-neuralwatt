@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Render a missing energy reading as `0 Wh` in the status indicator instead of `no data`. The reading stays missing for totals and coverage, and enabled equivalents render at zero too.
+
 ## 0.2.0
 
 - Fix session-tree navigation so rewinding a conversation immediately drops the abandoned branch's energy instead of adding it to the next response.
