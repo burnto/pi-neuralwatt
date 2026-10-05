@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Rename the visibility command from `/neuralwatt:toggle` to `/neuralwatt:energy-ui`. `on`, `off`, and the bare toggle behave as before, and no alias is registered.
 - Render a missing energy reading as `0 Wh` in the status indicator instead of `no data`. The reading stays missing for totals and coverage, and enabled equivalents render at zero too.
 
 ## 0.2.0

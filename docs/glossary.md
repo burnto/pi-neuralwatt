@@ -98,7 +98,7 @@ On `message_end` the extension rewrites the assistant message's `usage.cost`: su
 
 ## Master visibility (`energyUiEnabled`)
 
-Persisted switch, default on. It controls the extension-owned automatic energy UI: the primary status indicator, enabled equivalents, and newly rendered per-response annotations. It does not control provider registration, telemetry capture, persistence, billing lookup, or `patchPiCost`. Pi's normal dollar-cost display stays available when the energy UI is hidden. `/neuralwatt:toggle` and the optional shortcut flip it.
+Persisted switch, default on. It controls the extension-owned automatic energy UI: the primary status indicator, enabled equivalents, and newly rendered per-response annotations. It does not control provider registration, telemetry capture, persistence, billing lookup, or `patchPiCost`. Pi's normal dollar-cost display stays available when the energy UI is hidden. `/neuralwatt:energy-ui` and the optional shortcut flip it.
 
 ## Status area vs footer
 

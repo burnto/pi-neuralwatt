@@ -81,7 +81,7 @@ Per-response transcript annotations respect the renderer width via a grapheme-aw
 
 ## Historical visibility
 
-Pi 1.0.0 has no public API to rebuild existing transcript entries. Turning the master switch off or on changes the status area and equivalents immediately and governs newly rendered annotations. Existing annotations change on `/reload` or a natural transcript rebuild; the toggle command and shortcut disclose this rather than reloading the session. Tree decoration is out of scope because the label API affects user-owned labels.
+Pi 1.0.0 has no public API to rebuild existing transcript entries. Turning the master switch off or on changes the status area and equivalents immediately and governs newly rendered annotations. Existing annotations change on `/reload` or a natural transcript rebuild; the `/neuralwatt:energy-ui` command and shortcut disclose this rather than reloading the session. Tree decoration is out of scope because the label API affects user-owned labels.
 
 ## Shortcuts
 
