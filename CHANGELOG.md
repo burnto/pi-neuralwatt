@@ -4,6 +4,7 @@
 
 - Rename the visibility command from `/neuralwatt:toggle` to `/neuralwatt:energy-ui`. `on`, `off`, and the bare toggle behave as before, and no alias is registered.
 - Render a missing energy reading as `0 Wh` in the status indicator instead of `no data`. The reading stays missing for totals and coverage, and enabled equivalents render at zero too.
+- Add unit-based comparison presets alongside power presets: one `kind`-discriminated catalog, automatic magnitude formatting with literal unit labels, new `calories` and `cookies` unit defaults that replace `kettle`, and `settingsVersion: 3`. `cookies` takes one cookie as 150 food Calories (kcal) at 860.42 kcal/kWh: an energy equivalence, not food eaten or a separately measured GPU-only figure. A v2 preset without a `kind` is read as a power preset.
 
 ## 0.2.0
 

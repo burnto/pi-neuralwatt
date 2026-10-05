@@ -110,7 +110,15 @@ Pi API for rendering custom session entries in the transcript. Used for the opti
 
 ## Comparison preset
 
-An editable `{ id, icon, label, watts }` definition. `watts` is a constant power draw, entered in watts. The duration is `energyKwh × 3_600_000 / watts`. Preset ids are stable identity; labels, icons, and watts are editable. Defaults: `brain` (20 W), `led` (10 W), `kettle` (1,500 W rated).
+An editable entry in the preset catalog, discriminated by `kind`. A **power** preset is `{ kind: "power", id, icon, label, watts }`; `watts` is a constant power draw, and the duration is `energyKwh × 3_600_000 / watts`. A **unit** preset is `{ kind: "unit", id, icon, label, perKwh, unit }`; `perKwh` is the quantity produced per kWh, and the quantity is `energyKwh × perKwh`, rendered by magnitude with the literal unit label. Preset ids are stable identity; labels, icons, and the kind-specific value are editable. Defaults: `brain` (20 W), `led` (10 W), `calories` (860.42 /kWh, unit `calories`), and `cookies` (860.42 / 150 per kWh, unit `cookies`). The earlier `kettle` default is removed.
+
+## `perKwh`
+
+The quantity a unit preset produces per kWh. `calories` uses 860.42, for food Calories (kcal); one food Calorie is 1000 small calories. `cookies` uses 860.42 / 150, treating one cookie as 150 food Calories. These are energy equivalences, not claims about food eaten, and they do not isolate GPU-only energy.
+
+## Unit label
+
+The literal `unit` string on a unit preset, e.g. `calories`, `J`, `plastic bags`. Rendered without singular/plural handling.
 
 ## Energy status modes
 

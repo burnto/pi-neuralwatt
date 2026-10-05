@@ -69,7 +69,9 @@ Energy and cost coverage are tracked independently. Missing values are never sum
 
 ## Settings
 
-Settings live in `~/.pi/agent/neuralwatt.json` as `settingsVersion: 2`. Parsing never throws, uses own-property reads, ignores prototype-chain keys, and drops invalid presets and unknown equivalents. Legacy `energyStatus: "off"` migrates to `energyUiEnabled: false` with `energyStatus: "session"`; the obsolete `doomscroll` equivalent is dropped without substituting another preset.
+Settings live in `~/.pi/agent/neuralwatt.json` as `settingsVersion: 3`. Parsing never throws, uses own-property reads, ignores prototype-chain keys, and drops invalid presets and unknown equivalents. The preset catalog is a discriminated union on `kind`: a power preset carries `watts`, a unit preset carries `perKwh` and a literal `unit`. Legacy `energyStatus: "off"` migrates to `energyUiEnabled: false` with `energyStatus: "session"`; the obsolete `doomscroll` equivalent is dropped without substituting another preset. A v2 preset without `kind` is read as power when it has a usable `watts`; the unit kind is never inferred from an absent `kind`, so a preset with only `perKwh`/`unit` is dropped. Parsing always reports `settingsVersion: 3` and does not rewrite the file until a setting is saved.
+
+Unit-equivalent quantities render by magnitude: 1000 and above as an integer, 10 and above with one decimal, the rest with two, and an exact zero as `0`. There are no thousands separators, and non-finite or negative quantities produce no output, matching the power path. The default catalog includes `cookies`, a unit preset at 860.42 / 150 per kWh that treats one cookie as 150 food Calories (kcal); it is an energy equivalence, not a statement about food eaten or a separately measured GPU-only figure.
 
 Writes are best-effort. A failed write keeps the change in memory and surfaces a warning rather than silently succeeding.
 

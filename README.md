@@ -6,7 +6,7 @@ Neuralwatt model provider for pi. It reports the request cost Neuralwatt sends a
 
 Neuralwatt sends per-response telemetry on its response stream: a reported request cost, and reported GPU energy where it is available. The extension records both as session entries that never enter model context, and can write the reported cost into the response's usage record so pi's footer shows what Neuralwatt reported rather than the token list price.
 
-A separate `⚡️` indicator shows reported energy in pi's status area while a Neuralwatt model is active. You can add everyday comparisons, like how long the session's energy could run a human brain, a 10 W LED bulb, or a 1,500 W kettle.
+A separate `⚡️` indicator shows reported energy in pi's status area while a Neuralwatt model is active. You can add everyday comparisons, like how long the session's energy could run a human brain or a 10 W LED bulb, or how many food Calories it is worth.
 
 Totals follow the active branch, so rewinding or forking a conversation does not double-count abandoned turns.
 
@@ -77,21 +77,32 @@ The same rate is used for the **energy-rate equivalent** line in `/neuralwatt:co
 
 ## Comparison presets
 
-Each preset compares energy to the duration of a constant power draw:
+Each preset compares energy to something everyday, in one of two kinds.
+
+A **power** preset compares energy to the duration of a constant power draw:
 
 ```text
 durationSeconds = energyKwh × 3_600_000 / watts
 ```
 
-Power is in **watts**; energy is **Wh or kWh**. Results are approximate equivalents, not claims about identical work, lifecycle energy, or emissions.
+A **unit** preset converts energy into a quantity of a literal unit:
 
-| ID | Icon | Label | Watts | Basis |
-| --- | --- | --- | --- | --- |
-| `brain` | 🧠 | Human brain | 20 | Approximate whole-brain metabolic power, not electrical consumption |
-| `led` | 💡 | 10 W LED bulb | 10 | Defined 10 W electrical load |
-| `kettle` | 🫖 | 1,500 W electric kettle | 1500 | Manufacturer-rated input while heating, not a measured boil cycle |
+```text
+quantity = energyKwh × perKwh
+```
 
-At 1 Wh the equivalents are about 3 minutes, 6 minutes, and 2.4 seconds. Presets are editable: add, edit icon/label/watts, remove with confirmation, and restore defaults with confirmation, all from `/neuralwatt:settings`. Removing a preset deletes its definition; disabling removes only its enabled id. An empty catalog survives restart; defaults are restored only by an explicit action.
+Power is in **watts**; energy is **Wh or kWh**. Unit quantities render automatically by magnitude: 1000 and above as an integer, 10 and above with one decimal, and the rest with two (`3377 J`, `37.8 ft`, `0.81 calories`). Unit labels are literal, with no singular/plural handling. Results are approximate equivalents, not claims about identical work, lifecycle energy, or emissions.
+
+| ID | Icon | Label | Kind | Value | Basis |
+| --- | --- | --- | --- | --- | --- |
+| `brain` | 🧠 | Human brain | power | 20 W | Approximate whole-brain metabolic power, not electrical consumption |
+| `led` | 💡 | 10 W LED bulb | power | 10 W | Defined 10 W electrical load |
+| `calories` | 🍕 | Food calories | unit | 860.42 /kWh, `calories` | Food Calories (kcal); 1 kWh is about 860.42 |
+| `cookies` | 🍪 | Chocolate chip cookies | unit | 860.42 / 150 per kWh, `cookies` | One cookie taken as 150 food Calories (kcal); an energy equivalence, not food eaten |
+
+At 1 Wh the equivalents are about 3 minutes, 6 minutes, 0.86 calories, and 0.01 cookies. Presets are editable: add a power or unit preset, edit its label and icon, edit the kind-specific value (watts, or the factor and unit), remove with confirmation, and restore defaults with confirmation, all from `/neuralwatt:settings`. Removing a preset deletes its definition; disabling removes only its enabled id. An empty catalog survives restart; defaults are restored only by an explicit action.
+
+The `calories` and `cookies` presets convert reported energy into food energy: 1 kWh is about 860.42 food Calories (kcal), and one cookie is taken as 150 kcal. These are energy equivalences only. They say nothing about food actually eaten or nutrition, and they do not isolate GPU-only energy — they convert the same reported figure the power presets use.
 
 ## Settings
 
@@ -99,15 +110,16 @@ Settings live in `~/.pi/agent/neuralwatt.json`.
 
 ```json
 {
-  "settingsVersion": 2,
+  "settingsVersion": 3,
   "energyUiEnabled": true,
   "energyStatus": "session",
   "energyColor": "dim",
   "equivalents": [],
   "equivalentPresets": [
-    { "id": "brain", "icon": "🧠", "label": "Human brain", "watts": 20 },
-    { "id": "led", "icon": "💡", "label": "10 W LED bulb", "watts": 10 },
-    { "id": "kettle", "icon": "🫖", "label": "1,500 W electric kettle", "watts": 1500 }
+    { "kind": "power", "id": "brain", "icon": "🧠", "label": "Human brain", "watts": 20 },
+    { "kind": "power", "id": "led", "icon": "💡", "label": "10 W LED bulb", "watts": 10 },
+    { "kind": "unit", "id": "calories", "icon": "🍕", "label": "Food calories", "perKwh": 860.42, "unit": "calories" },
+    { "kind": "unit", "id": "cookies", "icon": "🍪", "label": "Chocolate chip cookies", "perKwh": 5.736133333333333, "unit": "cookies" }
   ],
   "patchPiCost": true,
   "perResponseLine": false,
@@ -120,13 +132,13 @@ Settings live in `~/.pi/agent/neuralwatt.json`.
 - `energyStatus`: `session`, `last`, or `both`.
 - `energyColor`: `dim`, `muted`, `text`, `accent`, `success`, `warning`, or `error`.
 - `equivalents`: ordered list of enabled preset ids.
-- `equivalentPresets`: editable preset definitions. An absent field uses defaults; `[]` is intentionally empty.
+- `equivalentPresets`: editable preset definitions, each `kind: "power"` (with a `watts` draw) or `kind: "unit"` (with a `perKwh` factor and a literal `unit` label). An absent field uses defaults; `[]` is intentionally empty.
 - `patchPiCost`: write the reported or estimated cost into pi's footer cost.
 - `perResponseLine`: show a one-line entry per recorded response.
 - `fallbackRateUsdPerKwh`: rate for the energy-rate estimate and equivalent.
 - `toggleShortcut`: a key binding, or `null` to disable.
 
-Older settings files migrate on load: `energyStatus: "off"` becomes `energyUiEnabled: false` with `energyStatus: "session"`, and the removed `doomscroll` equivalent is dropped.
+Older settings files migrate on load: `energyStatus: "off"` becomes `energyUiEnabled: false` with `energyStatus: "session"`, the removed `doomscroll` equivalent is dropped, and a v2 preset without a `kind` is read as a power preset. The file is rewritten with `settingsVersion: 3` on the next save.
 
 ## Shortcut
 
