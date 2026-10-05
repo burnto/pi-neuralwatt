@@ -56,13 +56,13 @@ Equivalents append to the indicator as an icon and a duration:
 ⚡️ 1.42 Wh · 🧠 4m16
 ```
 
-The energy UI is presentation only. Hiding it does not stop telemetry collection, persistence, or cost patching, and pi's normal dollar-cost display stays available. Turn it off and on with `/neuralwatt:toggle`, `/neuralwatt:toggle off`, `/neuralwatt:toggle on`, or the optional shortcut.
+The energy UI is presentation only. Hiding it does not stop telemetry collection, persistence, or cost patching, and pi's normal dollar-cost display stays available. Turn it off and on with `/neuralwatt:energy-ui`, `/neuralwatt:energy-ui off`, `/neuralwatt:energy-ui on`, or the optional shortcut.
 
 ## Commands
 
 `/neuralwatt:cost` prints recorded responses, reported energy with its coverage, reported cost plus estimates with its coverage, the effective rate, the last response, account context, and any enabled equivalents. It works even when the energy UI is hidden, and does not turn it on.
 
-`/neuralwatt:toggle [on|off]` shows or hides the energy UI and saves the choice.
+`/neuralwatt:energy-ui [on|off]` shows or hides the energy UI and saves the choice.
 
 `/neuralwatt:settings` opens a menu for the master switch, the indicator mode and color, enabled equivalents, the editable comparison presets, pi footer cost patching, the per-response transcript line, the fallback rate, and the shortcut.
 
@@ -130,7 +130,7 @@ Older settings files migrate on load: `energyStatus: "off"` becomes `energyUiEna
 
 ## Shortcut
 
-Extension shortcuts are registered at loading, and pi has no unregister API, so changing or disabling `toggleShortcut` takes effect after `/reload` or restart. `ctrl+shift+e` only fires when the terminal supports the Kitty keyboard protocol or modifyOtherKeys; legacy terminals may deliver the same bytes as Ctrl+E, so the binding will not work there. Use `alt+e` as an alternative, configured in `neuralwatt.json` (on macOS, enable Option as Meta in your terminal). The `/neuralwatt:toggle` command always works.
+Extension shortcuts are registered at loading, and pi has no unregister API, so changing or disabling `toggleShortcut` takes effect after `/reload` or restart. `ctrl+shift+e` only fires when the terminal supports the Kitty keyboard protocol or modifyOtherKeys; legacy terminals may deliver the same bytes as Ctrl+E, so the binding will not work there. Use `alt+e` as an alternative, configured in `neuralwatt.json` (on macOS, enable Option as Meta in your terminal). The `/neuralwatt:energy-ui` command always works.
 
 ## Limitations
 

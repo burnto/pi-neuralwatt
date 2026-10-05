@@ -1193,7 +1193,7 @@ export default async function (pi: ExtensionAPI) {
 		return lines.join("\n");
 	};
 
-	pi.registerCommand("neuralwatt:toggle", {
+	pi.registerCommand("neuralwatt:energy-ui", {
 		description: "Show or hide the Neuralwatt energy UI",
 		handler: async (args, ctx) => {
 			const arg = args.trim().toLowerCase();
@@ -1209,7 +1209,7 @@ export default async function (pi: ExtensionAPI) {
 				await applyVisibility(ctx, false);
 				return;
 			}
-			ctx.ui.notify("Usage: /neuralwatt:toggle [on|off]", "warning");
+			ctx.ui.notify("Usage: /neuralwatt:energy-ui [on|off]", "warning");
 		},
 	});
 

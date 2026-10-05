@@ -586,3 +586,38 @@ describe("branch rebuild", () => {
 		expect(statusOf(harness)).toContain("250.00 Wh");
 	});
 });
+
+describe("energy-ui command", () => {
+	it("registers neuralwatt:energy-ui without a neuralwatt:toggle alias", async () => {
+		const harness = await createHarness();
+		expect(harness.commands.has("neuralwatt:energy-ui")).toBe(true);
+		expect(harness.commands.has("neuralwatt:toggle")).toBe(false);
+	});
+
+	it("flips visibility for the bare, on, and off arguments", async () => {
+		const harness = await createHarness();
+		await startSession(harness);
+		const command = harness.commands.get("neuralwatt:energy-ui");
+		if (!command) throw new Error("energy-ui command not registered");
+
+		await command("off", harness.ctx);
+		expect(statusOf(harness)).toBeUndefined();
+
+		await command("on", harness.ctx);
+		expect(statusOf(harness)).toBeDefined();
+
+		// A bare argument toggles from the current state.
+		await command("", harness.ctx);
+		expect(statusOf(harness)).toBeUndefined();
+
+		await command("", harness.ctx);
+		expect(statusOf(harness)).toBeDefined();
+
+		// Unknown arguments change nothing and point at the new name.
+		await command("bogus", harness.ctx);
+		expect(statusOf(harness)).toBeDefined();
+		const usage = harness.notifications.at(-1)?.message ?? "";
+		expect(usage).toContain("neuralwatt:energy-ui");
+		expect(usage).not.toContain("neuralwatt:toggle");
+	});
+});
