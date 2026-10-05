@@ -555,7 +555,7 @@ describe("branch rebuild", () => {
 			{ type: "session_tree", newLeafId: null, oldLeafId: "x" },
 			harness.ctx,
 		);
-		expect(statusOf(harness)).toContain("no data");
+		expect(statusOf(harness)).toBe("\u26A1\uFE0F 0 Wh");
 
 		await runResponse(harness, { responseId: "resp-e2", energyKwh: 0.2 });
 		// Only the new branch's energy, not 300 Wh from adding E1 back.

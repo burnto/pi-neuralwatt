@@ -1253,10 +1253,6 @@ export function formatStatusText(
 ): string | undefined {
 	if (!settings.energyUiEnabled) return undefined;
 	const usingLast = settings.energyStatus === "last";
-	const hasReported = usingLast
-		? last?.energy.status === "reported"
-		: totals.energyReported > 0;
-	if (!hasReported) return `${mark} no data`;
 
 	const lastReported = last?.energy.status === "reported" ? last.energy.kwh : 0;
 	const energyKwh = usingLast ? lastReported : totals.energyKwh;
@@ -1265,7 +1261,7 @@ export function formatStatusText(
 	if (settings.energyStatus === "both" && last?.energy.status === "reported") {
 		parts.push(`(+${formatWh(last.energy.kwh)})`);
 	}
-	if (!usingLast && totals.energyReported > 0) {
+	if (!usingLast) {
 		for (const id of settings.equivalents) {
 			const preset = findPreset(settings.equivalentPresets, id);
 			if (!preset) continue;

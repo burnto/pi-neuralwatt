@@ -42,7 +42,7 @@ The model catalog comes from `https://api.neuralwatt.com/v1/models` and is cache
 
 ## Status area
 
-With the energy UI on and a Neuralwatt model active, the status area shows reported energy according to the indicator mode. Before any reported energy, it reads `⚡️ no data`; a reported zero reads `⚡️ 0 Wh`.
+With the energy UI on and a Neuralwatt model active, the status area shows reported energy according to the indicator mode. A reading that was never reported renders as `⚡️ 0 Wh`, and so does a reported zero; the missing reading is still left out of totals and coverage, so the zero is presentation only. Enabled equivalents render at zero too (`⚡️ 0 Wh · 🧠 0s`).
 
 | Mode | Example |
 | --- | --- |

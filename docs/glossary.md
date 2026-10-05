@@ -66,7 +66,7 @@ A record with `kind: "response-energy"` and no schema version, written by earlie
 
 ## Missing / unavailable / invalid
 
-How a reading without a usable value is labeled. `missing` means no metadata was supplied, `unavailable` means the provider said so, `invalid` means a value was present but unusable (negative, NaN, infinite). Missing values are never counted as zero.
+How a reading without a usable value is labeled. `missing` means no metadata was supplied, `unavailable` means the provider said so, `invalid` means a value was present but unusable (negative, NaN, infinite). Missing values are never counted as zero. The status indicator renders them as `0 Wh`, but totals and coverage still treat the reading as absent.
 
 ## Accounting method
 
@@ -102,7 +102,7 @@ Persisted switch, default on. It controls the extension-owned automatic energy U
 
 ## Status area vs footer
 
-Status area: the `⚡️` energy indicator the extension sets with `ui.setStatus`. Footer: pi's built-in cost display, which sums `usage.cost.total` and shows a bare number without an extension-specific source label.
+Status area: the `⚡️` energy indicator the extension sets with `ui.setStatus`. It renders a missing reading as `0 Wh`; the reading itself stays missing for totals and coverage. Footer: pi's built-in cost display, which sums `usage.cost.total` and shows a bare number without an extension-specific source label.
 
 ## `registerEntryRenderer`
 
